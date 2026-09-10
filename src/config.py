@@ -7,6 +7,9 @@ BOT_VERSION = "v.local"
 API_KEY = os.getenv("API_KEY", "")
 # Your Octopus Energy account number. Starts with A-
 ACC_NUMBER = os.getenv("ACC_NUMBER", "")
+# Website credentials, used only when API tariff initiation fails.
+OCTOPUS_LOGIN_EMAIL = os.getenv("OCTOPUS_LOGIN_EMAIL", "")
+OCTOPUS_LOGIN_PASSWD = os.getenv("OCTOPUS_LOGIN_PASSWD", "")
 BASE_URL = os.getenv("BASE_URL", "https://api.octopus.energy/v1")
 # Comma-separated list of Apprise notification URLs
 NOTIFICATION_URLS = os.getenv("NOTIFICATION_URLS", "")

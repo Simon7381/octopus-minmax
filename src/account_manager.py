@@ -6,12 +6,14 @@ import config
 from account_info import AccountInfo
 from tariff import Tariff
 from query_service import QueryService
+from browser_switch import SIGNUP_FLOWS, initiate_browser_switch
 from queries import (
     get_terms_version_query,
     accept_terms_query,
     account_query,
     consumption_query,
-    switch_query
+    switch_query,
+    enrolment_query
 )
 
 logger = logging.getLogger('octobot.account_manager')
@@ -39,6 +41,7 @@ class AccountManager:
         self.mpan: Optional[str] = None
         self.device_id: Optional[str] = None
         self.region_code: Optional[str] = None
+        self._website_accepted_enrolments = set()
 
         self._initialized: bool = True
 
@@ -151,10 +154,84 @@ class AccountManager:
             product_code=target_product_code,
             change_date=change_date.isoformat() # Ensure date is in YYYY-MM-DD format
         )
-        result = self.query_service.execute_gql_query(query)
-        return result.get("startOnboardingProcess", {}).get("productEnrolment", {}).get("id")
+        try:
+            result = self.query_service.execute_gql_query(query)
+            enrolment = (result.get("startOnboardingProcess") or {}).get("productEnrolment") or {}
+            if not enrolment.get("id"):
+                raise RuntimeError("Tariff initiation returned no enrolment ID")
+            return enrolment["id"]
+        except Exception as exc:
+            logger.warning("API tariff initiation failed (%s).", type(exc).__name__)
+            return self._initiate_tariff_switch_in_browser(target_product_code)
+
+    def _fetch_enrolments(self) -> List[Dict]:
+        result = self.query_service.execute_gql_query(
+            enrolment_query.format(acc_number=self.config.ACC_NUMBER)
+        )
+        entries = result.get("productEnrolments")
+        if not isinstance(entries, list):
+            raise RuntimeError("Cannot verify tariff switch: product enrolments are unavailable")
+        return entries
+
+    @staticmethod
+    def _matching_enrolment(entries: List[Dict], product_code: str) -> Optional[str]:
+        matches = [entry["id"] for entry in entries
+                   if entry.get("id") and entry.get("status") == "IN_PROGRESS"
+                   and (entry.get("product") or {}).get("code") == product_code]
+        if len(matches) > 1:
+            raise RuntimeError("Multiple matching tariff enrolments; check your Octopus account")
+        return matches[0] if matches else None
+
+    def _initiate_tariff_switch_in_browser(self, target_product_code: str) -> str:
+        tariff = next((t for t in self.available_tariffs if t.product_code == target_product_code), None)
+        if tariff is None:
+            raise ValueError("Cannot find the target tariff for the website fallback")
+        if tariff.id not in SIGNUP_FLOWS:
+            raise ValueError(f"Tariff '{tariff.id}' supports GraphQL switching only; no website fallback is available")
+        logger.info("Using website fallback for tariff '%s'.", tariff.id)
+
+        # A failed API response may still have created an enrolment. Reuse it.
+        before = self._fetch_enrolments()
+        pending_id = self._matching_enrolment(before, target_product_code)
+        if pending_id:
+            logger.info("Using existing in-progress enrolment for the target product.")
+            return pending_id
+        previous_ids = {entry.get("id") for entry in before}
+
+        def wait_for_enrolment():
+            for attempt in range(13):
+                entries = [entry for entry in self._fetch_enrolments()
+                           if entry.get("id") not in previous_ids]
+                completed = [entry for entry in entries
+                             if entry.get("id") and (entry.get("product") or {}).get("code") == target_product_code
+                             and (entry.get("status") == "COMPLETED" or any(
+                                 stage.get("name") == "post-enrolment" and stage.get("status") == "COMPLETED"
+                                 for stage in (entry.get("stages") or [])))]
+                if len(completed) > 1:
+                    raise RuntimeError("Multiple completed target enrolments; check your Octopus account")
+                if completed:
+                    enrolment_id = completed[0]["id"]
+                    self._website_accepted_enrolments.add((target_product_code, enrolment_id))
+                    return enrolment_id
+                enrolment_id = self._matching_enrolment(entries, target_product_code)
+                if enrolment_id:
+                    return enrolment_id
+                if attempt < 12:
+                    time.sleep(10)
+            raise RuntimeError(
+                "Website switch submitted, but no new enrolment for the exact "
+                "target product appeared within two minutes. Check your Octopus account "
+                "and emails before trying again (the website may have auto-accepted)."
+            )
+
+        return initiate_browser_switch(
+            tariff, self.config.ACC_NUMBER, self.config.OCTOPUS_LOGIN_EMAIL,
+            self.config.OCTOPUS_LOGIN_PASSWD, wait_for_enrolment
+        )
 
     def accept_new_agreement(self, product_code: str, enrolment_id: str) -> Optional[str]:
+        if (product_code, enrolment_id) in self._website_accepted_enrolments:
+            return "already accepted on website"
         # get terms and conditions version
         version = self._get_agreement_terms_version(product_code)
         # accept terms and conditions
@@ -165,13 +242,18 @@ class AccountManager:
         result = self.query_service.execute_gql_query(query)
         return result.get('acceptTermsAndConditions', {}).get('acceptedVersion', "unknown version")
 
-    def verify_new_agreement_status(self) -> bool:
+    def verify_new_agreement_status(self, product_code: Optional[str] = None) -> bool:
         """Verifies if the new tariff agreement is active as of today."""
         query = account_query.format(acc_number=self.config.ACC_NUMBER)
         result = self.query_service.execute_gql_query(query)
 
         today_date = datetime.now().date()
         for agreement in result.get("account", {}).get("electricityAgreements", []):
+            if product_code and (agreement.get("tariff") or {}).get("productCode") != product_code:
+                continue
+            meter_point = agreement.get("meterPoint") or {}
+            if meter_point.get("direction") != "IMPORT" or (self.mpan and meter_point.get("mpan") != self.mpan):
+                continue
             valid_from_str = agreement.get('validFrom')
             if valid_from_str:
                 try:

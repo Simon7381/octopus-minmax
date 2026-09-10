@@ -1,0 +1,10 @@
+.git
+.venv
+.env
+.env.*
+*.env
+logs
+**/__pycache__
+.playwright-browsers
+*.code-workspace
+my-docker-compose.yaml

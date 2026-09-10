@@ -149,6 +149,7 @@ class BotOrchestrator:
 
         if not target_tariff.product_code:
             ns.send_notification("ERROR: product_code is missing.")
+            return
 
         enrolment_id = self.account_manager.initiate_tariff_switch(target_tariff.product_code)
         if not enrolment_id:
@@ -161,13 +162,16 @@ class BotOrchestrator:
         # Give octopus some time to generate the agreement
         time.sleep(wait_time)
         accepted_version = self.account_manager.accept_new_agreement(target_tariff.product_code, enrolment_id)
-        ns.send_notification(f"Accepted agreement (v.{accepted_version}). Switch successful.")
+        if accepted_version == "already accepted on website":
+            ns.send_notification("Agreement was automatically accepted on the website.")
+        else:
+            ns.send_notification(f"Accepted agreement (v.{accepted_version}). Switch successful.")
 
-        verified = self.account_manager.verify_new_agreement_status()
+        verified = self.account_manager.verify_new_agreement_status(target_tariff.product_code)
         if not verified:
             ns.send_notification("Verification failed, waiting 20 seconds and trying again...")
             time.sleep(60)
-            verified = self.account_manager.verify_new_agreement_status() # Retry
+            verified = self.account_manager.verify_new_agreement_status(target_tariff.product_code) # Retry
             if verified:
                 ns.send_notification("Verified new agreement successfully. Process finished.")
             else:

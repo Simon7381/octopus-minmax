@@ -10,6 +10,8 @@ def get_config():
         return {
             'api_key': config.API_KEY,
             'acc_number': config.ACC_NUMBER,
+            'octopus_login_email': config.OCTOPUS_LOGIN_EMAIL,
+            'octopus_login_password_configured': bool(config.OCTOPUS_LOGIN_PASSWD),
             'base_url': config.BASE_URL,
             'execution_time': config.EXECUTION_TIME,
             'switch_threshold': config.SWITCH_THRESHOLD,
@@ -31,6 +33,10 @@ def update_config(new_values):
             config.API_KEY = new_values['api_key']
         if 'acc_number' in new_values and new_values['acc_number']:
             config.ACC_NUMBER = new_values['acc_number']
+        if 'octopus_login_email' in new_values:
+            config.OCTOPUS_LOGIN_EMAIL = new_values['octopus_login_email'].strip()
+        if new_values.get('octopus_login_passwd'):
+            config.OCTOPUS_LOGIN_PASSWD = new_values['octopus_login_passwd']
         if 'base_url' in new_values and new_values['base_url']:
             config.BASE_URL = new_values['base_url']
         if 'execution_time' in new_values:

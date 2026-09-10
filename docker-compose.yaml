@@ -13,6 +13,8 @@ services:
       - TZ=Europe/London
       - ACC_NUMBER=<your_account_number>
       - API_KEY=<your_api_key>
+      - OCTOPUS_LOGIN_EMAIL=${OCTOPUS_LOGIN_EMAIL:-}
+      - OCTOPUS_LOGIN_PASSWD=${OCTOPUS_LOGIN_PASSWD:-}
       - EXECUTION_TIME=23:00
       - SWITCH_THRESHOLD=2
       - NOTIFICATION_URLS=<your_apprise_notification_urls>

@@ -7,6 +7,11 @@ logger = logging.getLogger('octobot.query_service')
 MAX_RETRIES = 5
 BASE_WAIT_BEFORE_RETRY_SECONDS = 30
 
+
+class GQLAuthorizationError(Exception):
+    """The authenticated viewer lacks permission; refreshing/retrying cannot help."""
+
+
 class QueryService:
     _shared_token = None
     def __init__(self, api_key: str, base_url: str):
@@ -84,6 +89,8 @@ class QueryService:
                     result = response.json()
                     if "errors" in result:
                         error_codes = [e.get("extensions", {}).get("errorCode") for e in result.get("errors", [])]
+                        if "KT-CT-1111" in error_codes:
+                            raise GQLAuthorizationError("GQL permission denied (KT-CT-1111)")
                         if "KT-CT-1124" in error_codes and not token_refreshed:
                             logger.debug("JWT expired, refreshing token...")
                             try:
@@ -110,6 +117,8 @@ class QueryService:
                     except Exception as e:
                         logger.warning(f"Failed to refresh token: {e}")
 
+            except GQLAuthorizationError:
+                raise
             except Exception as e:
                 logger.warning(f"Request exception on attempt {retry + 1}/{MAX_RETRIES}: {type(e).__name__} - {e}")
                 if retry == MAX_RETRIES - 1:
@@ -122,7 +131,7 @@ class QueryService:
 
             # Calculate wait time with exponential backoff
             wait_time = BASE_WAIT_BEFORE_RETRY_SECONDS * (2 ** retry)
-            logger.debug(f"Request failed with status {response.status_code}. Retrying in {wait_time} seconds... (attempt {retry + 1}/{MAX_RETRIES})")
+            logger.debug(f"Request failed. Retrying in {wait_time} seconds... (attempt {retry + 1}/{MAX_RETRIES})")
             retry += 1
             time.sleep(wait_time)
 

@@ -44,6 +44,9 @@ https://github.com/eelmafia/octopus-minmax
 
 ### Running Manually
 1. Install the Python requirements.
+   Use Python 3.12 and run `python -m playwright install --with-deps firefox` on Linux
+   (on Windows, use `python -m playwright install firefox`). The container includes Firefox
+   and its dependencies; see [Playwright browser installation](https://playwright.dev/python/docs/browsers).
 2. Configure the environment variables.
 3. Run `main.py`. I recommend scheduling it to run it at 11 PM in order to leave yourself an hour as a safety margin in case Octopus takes a while to generate your new agreement.
 
@@ -70,6 +73,77 @@ docker run -d \
 ```
 or use the docker-compose.yaml **Don't forget to add your environment variables**
 
+### Website fallback for tariff switches
+
+The bot first tries the tariff initiation API. If it fails, it signs in to the Octopus
+website using `OCTOPUS_LOGIN_EMAIL` and `OCTOPUS_LOGIN_PASSWD`. Permission error
+`KT-CT-1111` triggers the fallback immediately. Other API failures retain the existing
+retry policy. Agreement acceptance continues through the API unless Octopus has
+already completed the new enrolment on the website.
+
+| Tariff ID | Signup path | Website action |
+|-----------|-------------|----------------|
+| `go` | `go` | Check I accept the Terms & Conditions, then Switch Tariff |
+| `agile` | `agile` | Check terms if displayed, then Switch Tariff |
+| `cosy` | `cosy-octopus` | Select Variable explicitly, check terms if displayed, then Switch Tariff |
+
+Each path uses `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`.
+Only `go`, `agile` and `cosy` have website routes. `go-fix-12m` is supported through
+GraphQL only; if its API initiation fails, the bot reports an error without opening
+the browser. The Go website route accepts the displayed terms without selecting a variant.
+
+The fallback checks for an existing matching pending enrolment before submitting,
+then polls for a new enrolment for the exact target product for two minutes.
+Missing or ambiguous enrolments cause an error; check the account and emails before
+retrying a submitted switch. This also requires read access to `productEnrolments`.
+
+Set website credentials in the container environment, Home Assistant add-on options,
+or the dashboard. A blank password field in the dashboard keeps the saved password;
+dashboard changes reset on restart. For Compose, put these two environment variables
+in a local `.env` file or export them before starting Compose.
+
+Container images support `amd64` and `arm64` (64-bit); the Firefox fallback does not
+support the old 32-bit ARM add-on targets.
+
+### Testing on Windows with Podman Desktop
+
+1. Finish Podman Desktop onboarding and start its Podman machine. Windows needs a
+   Linux VM provided by WSL 2 or Hyper-V; follow the
+   [Podman Windows setup guide](https://podman-desktop.io/docs/installation/windows-install).
+2. From this repository, build the changed source and run the offline tests:
+
+   ```powershell
+   podman info
+   podman build -f dockerfile -t localhost/octopus-minmax:playwright .
+   podman run --rm localhost/octopus-minmax:playwright python -m unittest discover -s tests -v
+   ```
+
+   These tests use mock API responses and local HTML in Firefox, with no Octopus login
+   or tariff changes. Commands use Podman's documented [build](https://docs.podman.io/en/latest/markdown/podman-build.1.html)
+   and [run](https://docs.podman.io/en/latest/markdown/podman-run.1.html) options.
+3. Copy `podman.env.example` to `podman.env` and enter your API key, account number,
+   website credentials and dashboard password. Keep `DRY_RUN=true` and `ONE_OFF=true`.
+   `podman.env` is excluded from Git and container build context.
+4. Start a comparison against your account:
+
+   ```powershell
+   podman run -d --name octopus-minmax-test --env-file podman.env -p 127.0.0.1:5050:5050 localhost/octopus-minmax:playwright
+   podman logs -f octopus-minmax-test
+   ```
+
+   Open `http://localhost:5050`. Dry run tests the comparison and configuration;
+   it does **not** exercise the website fallback. One-off mode leaves the dashboard
+   running after the comparison. Stop it with `podman stop octopus-minmax-test`.
+5. Validate the authenticated login and signup controls for Go, Agile and Cosy,
+   stopping before Switch Tariff. The automated fixtures model the reported controls;
+   they cannot prove the current live page structure or account eligibility.
+6. Run one supervised live switch with `DRY_RUN=false`, confirm the fallback finds
+   the correct enrolment and the API accepts the agreement, then check the resulting
+   product on the account. Enable scheduled operation only after that succeeds.
+
+For local tests outside the container, install the requirements and Firefox, then
+run `python -m unittest discover -s tests -v`. The full requirements target Python 3.12.
+
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.
 
 #### Environment Variables
@@ -77,6 +151,8 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 |-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ACC_NUMBER`                | Your Octopus Energy account number.                                                                                                                                                                                     |
 | `API_KEY`                   | API token for accessing your Octopus Energy account.                                                                                                                                                                    |
+| `OCTOPUS_LOGIN_EMAIL`       | Octopus website email, required when API tariff initiation fails. |
+| `OCTOPUS_LOGIN_PASSWD`      | Octopus website password, required when API tariff initiation fails. |
 | `TARIFFS`                   | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                      |
 | `EXECUTION_TIME`            | (Optional) The time (HH:MM) when the script should execute. Default is `23:00` (11 PM).                                                                                                                                 |
 | `SWITCH_THRESHOLD`          | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p). |
@@ -102,6 +178,7 @@ Below is a list of supported tariffs, their IDs (to use in environment variables
 | Agile Octopus    | agile     | ✅          |
 | Cosy Octopus     | cosy      | ✅          |
 | Octopus Go       | go        | ✅          |
+| Octopus Go 12M Fixed | go-fix-12m | ✅       |
 
 
 #### Setting up Apprise Notifications
