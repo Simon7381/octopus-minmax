@@ -30,6 +30,9 @@ ONE_OFF_EXECUTED = False
 
 # Whether to notify the user of a switch but not actually switch
 DRY_RUN = os.getenv("DRY_RUN", "false") in ["true", "True", "1"]
+# On startup, check all three website signup flows once without submitting.
+# Takes precedence over comparisons, ONE_OFF and scheduled switching.
+TEST_PLAYWRIGHT = os.getenv("TEST_PLAYWRIGHT", "false").lower() in ["true", "1"]
 
 # Web UI authentication
 WEB_USERNAME = os.getenv("WEB_USERNAME", "admin")

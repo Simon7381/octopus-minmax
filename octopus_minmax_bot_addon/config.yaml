@@ -27,6 +27,7 @@ options:
   SWITCH_THRESHOLD: 2
   ONE_OFF: false
   DRY_RUN: false
+  TEST_PLAYWRIGHT: false
   NOTIFICATION_URLS: ""
   TARIFFS: "agile,go,flexible"
   TZ: "Europe/London"
@@ -42,6 +43,7 @@ schema:
   SWITCH_THRESHOLD: int
   ONE_OFF: bool
   DRY_RUN: bool
+  TEST_PLAYWRIGHT: bool
   NOTIFICATION_URLS: str
   TARIFFS: str
   TZ: str

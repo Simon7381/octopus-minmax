@@ -169,3 +169,4 @@ cython_debug/
 .playwright-browsers/
 podman.env
 my-docker-compose.yaml
+logs/

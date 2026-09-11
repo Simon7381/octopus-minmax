@@ -20,6 +20,7 @@ services:
       - NOTIFICATION_URLS=<your_apprise_notification_urls>
       - ONE_OFF=false
       - DRY_RUN=false
+      - TEST_PLAYWRIGHT=false
       - TARIFFS=agile,flexible
       - WEB_USERNAME=admin
       - WEB_PASSWORD=admin # not meant to be secure

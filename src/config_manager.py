@@ -19,6 +19,7 @@ def get_config():
             'one_off_run': config.ONE_OFF_RUN,
             'one_off_executed': config.ONE_OFF_EXECUTED,
             'dry_run': config.DRY_RUN,
+            'test_playwright': config.TEST_PLAYWRIGHT,
             'notification_urls': config.NOTIFICATION_URLS,
             'batch_notifications': config.BATCH_NOTIFICATIONS,
         }

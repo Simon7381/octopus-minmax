@@ -11,6 +11,13 @@
         ⚠️ <strong>Note:</strong> Config changes apply immediately but reset on container restart. Update docker-compose.yaml for permanent changes.
     </div>
 
+    {% if config.test_playwright %}
+    <div class="bg-blue-900 border border-blue-700 text-blue-100 rounded-lg p-4 mb-6">
+        Playwright test mode: website checks run once at startup without submitting a switch.
+        See the logs for results. Set TEST_PLAYWRIGHT=false and restart to resume comparisons.
+    </div>
+    {% endif %}
+
     <form method="POST" class="space-y-6">
         <!-- API Settings -->
         <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">

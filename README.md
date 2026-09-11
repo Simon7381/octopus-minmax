@@ -44,8 +44,8 @@ https://github.com/eelmafia/octopus-minmax
 
 ### Running Manually
 1. Install the Python requirements.
-   Use Python 3.12 and run `python -m playwright install --with-deps firefox` on Linux
-   (on Windows, use `python -m playwright install firefox`). The container includes Firefox
+   Use Python 3.12 and run `python -m playwright install --with-deps chromium` on Linux
+   (on Windows, use `python -m playwright install chromium`). The container includes Chromium
    and its dependencies; see [Playwright browser installation](https://playwright.dev/python/docs/browsers).
 2. Configure the environment variables.
 3. Run `main.py`. I recommend scheduling it to run it at 11 PM in order to leave yourself an hour as a safety margin in case Octopus takes a while to generate your new agreement.
@@ -87,7 +87,12 @@ already completed the new enrolment on the website.
 | `agile` | `agile` | Check terms if displayed, then Switch Tariff |
 | `cosy` | `cosy-octopus` | Select Variable explicitly, check terms if displayed, then Switch Tariff |
 
-Each path uses `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`.
+Each path opens `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`
+and follows Octopus's redirect to its current signup route.
+The browser opens `https://octopus.energy/dashboard/`, follows Octopus's redirect to
+`https://auth.octopus.energy/login/`, submits the current login form, then loads
+`/dashboard/` again and verifies the configured account number in
+the resulting URL or page source before inspecting or submitting a signup form.
 Only `go`, `agile` and `cosy` have website routes. `go-fix-12m` is supported through
 GraphQL only; if its API initiation fails, the bot reports an error without opening
 the browser. The Go website route accepts the displayed terms without selecting a variant.
@@ -102,10 +107,25 @@ or the dashboard. A blank password field in the dashboard keeps the saved passwo
 dashboard changes reset on restart. For Compose, put these two environment variables
 in a local `.env` file or export them before starting Compose.
 
-Container images support `amd64` and `arm64` (64-bit); the Firefox fallback does not
+Container images support `amd64` and `arm64` (64-bit); the browser fallback does not
 support the old 32-bit ARM add-on targets.
 
 ### Testing on Windows with Podman Desktop
+
+Set `TEST_PLAYWRIGHT=true` in your Compose environment and recreate the container to
+test the live website login and all three signup pages. This startup mode takes
+precedence over `DRY_RUN`, `ONE_OFF`, the configured tariff list and scheduling.
+It checks Go's terms checkbox, any displayed Agile terms, Cosy's Variable option,
+and whether each Switch Tariff button is actionable using a trial click that does
+not submit. It does not initiate switches or call the agreement acceptance API.
+Results are logged per tariff; failed signup checks also save a screenshot under
+`logs/playwright-<tariff>-failure.png`. The dashboard remains running afterwards.
+Set `TEST_PLAYWRIGHT=false` and recreate the container to resume normal operation.
+This mode writes results locally and does not send external notifications.
+Octopus protects login with invisible hCaptcha and may present an interactive image
+challenge to a headless browser. When that happens, the test and live fallback stop
+without submitting a switch and log the challenge explicitly; a previously authenticated
+browser session or an Octopus login flow that does not challenge automation is required.
 
 1. Finish Podman Desktop onboarding and start its Podman machine. Windows needs a
    Linux VM provided by WSL 2 or Hyper-V; follow the
@@ -118,7 +138,7 @@ support the old 32-bit ARM add-on targets.
    podman run --rm localhost/octopus-minmax:playwright python -m unittest discover -s tests -v
    ```
 
-   These tests use mock API responses and local HTML in Firefox, with no Octopus login
+   These tests use mock API responses and local HTML in Chromium, with no Octopus login
    or tariff changes. Commands use Podman's documented [build](https://docs.podman.io/en/latest/markdown/podman-build.1.html)
    and [run](https://docs.podman.io/en/latest/markdown/podman-run.1.html) options.
 3. Copy `podman.env.example` to `podman.env` and enter your API key, account number,
@@ -141,7 +161,7 @@ support the old 32-bit ARM add-on targets.
    the correct enrolment and the API accepts the agreement, then check the resulting
    product on the account. Enable scheduled operation only after that succeeds.
 
-For local tests outside the container, install the requirements and Firefox, then
+For local tests outside the container, install the requirements and Chromium, then
 run `python -m unittest discover -s tests -v`. The full requirements target Python 3.12.
 
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.
@@ -159,6 +179,7 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | `NOTIFICATION_URLS`         | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates.  See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
 | `ONE_OFF`                   | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                      |
 | `DRY_RUN`                   | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                    |
+| `TEST_PLAYWRIGHT`           | (Optional, default false) Test Go, Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off. |
 | `BATCH_NOTIFICATIONS`       | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                               |
 | `WEB_USERNAME`              | (Optional) Defaults to `admin`. Auth for the web dashboard.
 | `WEB_PASSWORD`              | (Optional) Defaults to `admin`. Auth for the web dashboard.

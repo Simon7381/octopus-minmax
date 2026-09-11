@@ -10,6 +10,7 @@ from tariff import Tariff, TARIFFS
 from query_service import QueryService
 from comparison_engine import ComparisonEngine, ComparisonResult
 from notification_service import NotificationService
+from browser_switch import run_playwright_checks
 import logging
 logger = logging.getLogger('octobot.bot_orchestrator')
 
@@ -26,6 +27,16 @@ class BotOrchestrator:
         self.notification_service = None
 
     def start(self) -> None:
+        if config.TEST_PLAYWRIGHT:
+            logger.info("TEST_PLAYWRIGHT mode: checking Go, Agile and Cosy once. Switching and scheduling are disabled.")
+            try:
+                results = run_playwright_checks(config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD)
+                passed = sum(result["passed"] for result in results)
+                logger.info("TEST_PLAYWRIGHT finished: %s/%s passed. No tariff switches submitted.", passed, len(results))
+            except Exception as exc:
+                logger.error("TEST_PLAYWRIGHT could not complete: %s", str(exc))
+            return  # Leave the dashboard running; never enter the comparison loop.
+
         self.notification_service = NotificationService(config.NOTIFICATION_URLS, config.BATCH_NOTIFICATIONS)
         ns = self.notification_service
 
