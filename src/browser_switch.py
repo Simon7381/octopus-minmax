@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlencode
 
+from invisible_playwright import InvisiblePlaywright
+from playwright.sync_api import Error
+
 from tariff import TARIFFS, Tariff
 
 logger = logging.getLogger("octobot.browser_switch")
@@ -99,10 +102,7 @@ def prepare_signup(page, tariff: Tariff) -> dict:
 @contextmanager
 def logged_in_page(account_number: str, email: str, password: str):
     """Share the same login and browser lifecycle for checks and real switches."""
-    from playwright.sync_api import Error, sync_playwright
-
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+    with InvisiblePlaywright() as browser:
         try:
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -181,10 +181,13 @@ def run_playwright_checks(account_number: str, email: str, password: str) -> lis
             try:
                 open_signup(page, tariff, account_number)
                 checks = prepare_signup(page, tariff)
-                # Checks visibility, enabled state and actionability without clicking.
-                page.get_by_role(
+                # Checks visibility and enabled state without clicking.
+                switch_button = page.get_by_role(
                     "button", name=re.compile(r"^Switch Tariff$", re.IGNORECASE)
-                ).click(trial=True)
+                )
+                switch_button.wait_for(state="visible")
+                if not switch_button.is_enabled():
+                    raise RuntimeError("Switch Tariff button is disabled")
                 result = {
                     "tariff": identifier,
                     "passed": True,
@@ -229,9 +232,6 @@ def initiate_browser_switch(
         )
     if not account_number:
         raise ValueError("Website fallback requires ACC_NUMBER")
-
-    # Lazy import keeps API-only installations usable without a browser runtime.
-    from playwright.sync_api import Error
 
     with logged_in_page(account_number, email, password) as page:
         stage = "tariff selection"

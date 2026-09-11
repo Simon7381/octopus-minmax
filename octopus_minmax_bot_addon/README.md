@@ -46,9 +46,8 @@ To install this third-party add-on:
 ### Running Manually
 
 1. Install the Python requirements.
-   Use Python 3.12 and run `python -m invisible_playwright fetch` on Linux
-   (on Windows, use `python -m invisible_playwright fetch`). The container includes Chromium
-   and its dependencies; see [Playwright browser installation](https://playwright.dev/python/docs/browsers).
+   Use Python 3.12 and run `python -m invisible_playwright fetch`. The container includes C++ patched Firefox
+   and its runtime dependencies; see [invisible-playwright documentation](https://github.com/feder-cr/invisible_playwright).
 2. Configure the environment variables.
 3. Run `main.py`. I recommend scheduling it to run it at 11 PM in order to leave yourself an hour as a safety margin in case Octopus takes a while to generate your new agreement.
 
@@ -143,7 +142,7 @@ browser session or an Octopus login flow that does not challenge automation is r
    podman run --rm localhost/octopus-minmax:playwright python -m unittest discover -s tests -v
    ```
 
-   These tests use mock API responses and local HTML in Chromium, with no Octopus login
+   These tests use mock API responses and local HTML in C++ patched Firefox, with no Octopus login
    or tariff changes. Commands use Podman's documented [build](https://docs.podman.io/en/latest/markdown/podman-build.1.html)
    and [run](https://docs.podman.io/en/latest/markdown/podman-run.1.html) options.
 
@@ -168,7 +167,7 @@ browser session or an Octopus login flow that does not challenge automation is r
    the correct enrolment and the API accepts the agreement, then check the resulting
    product on the account. Enable scheduled operation only after that succeeds.
 
-For local tests outside the container, install the requirements and Chromium, then
+For local tests outside the container, install requirements, run `python -m invisible_playwright fetch`, then
 run `python -m unittest discover -s tests -v`. The full requirements target Python 3.12.
 
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.

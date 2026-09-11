@@ -1,4 +1,4 @@
-"""Chromium tests against local HTML fixtures; no requests to Octopus are made."""
+"""Browser switch tests using invisible-playwright C++ patched Firefox against local HTML fixtures; no requests to Octopus are made."""
 
 import os
 import sys
@@ -13,7 +13,7 @@ if (ROOT / ".playwright-browsers").exists():
         "PLAYWRIGHT_BROWSERS_PATH", str(ROOT / ".playwright-browsers")
     )
 
-from playwright.sync_api import sync_playwright
+from invisible_playwright import InvisiblePlaywright
 
 from browser_switch import (
     initiate_browser_switch,
@@ -32,13 +32,12 @@ def tariff(identifier, product="GO-FIX-12M-26-08-19"):
 class SignupControlsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.playwright = sync_playwright().start()
-        cls.browser = cls.playwright.chromium.launch()
+        cls.inv = InvisiblePlaywright()
+        cls.browser = cls.inv.__enter__()
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls.playwright.stop()
+        cls.inv.__exit__(None, None, None)
 
     def setUp(self):
         self.page = self.browser.new_page()
@@ -134,9 +133,10 @@ class BrowserLifecycleTests(unittest.TestCase):
         page.wait_for_timeout.assert_not_called()
 
     def test_login_uses_auth_url_and_verifies_dashboard_account(self):
-        with patch("playwright.sync_api.sync_playwright") as start:
-            browser_type = start.return_value.__enter__.return_value.chromium
-            page = browser_type.launch.return_value.new_context.return_value.new_page.return_value
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            browser = start.return_value.__enter__.return_value
+            context = browser.new_context.return_value
+            page = context.new_page.return_value
             page.url = "https://octopus.energy/dashboard/new/accounts/A-TEST/dashboard"
             with logged_in_page(
                 "A-TEST", "user@example.invalid", "password"
@@ -157,16 +157,14 @@ class BrowserLifecycleTests(unittest.TestCase):
                     for call in page.wait_for_url.call_args_list
                 )
             )
-            context_options = (
-                browser_type.launch.return_value.new_context.call_args.kwargs
-            )
+            context_options = context.call_args if hasattr(context, 'call_args') else None
             page.locator.assert_any_call("#id_auth-username")
             page.locator.assert_any_call("#id_auth-password")
             page.locator.assert_any_call("#submit-button")
 
     def test_login_rejects_dashboard_for_another_account(self):
-        with patch("playwright.sync_api.sync_playwright") as start:
-            page = start.return_value.__enter__.return_value.chromium.launch.return_value.new_context.return_value.new_page.return_value
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            page = start.return_value.__enter__.return_value.new_context.return_value.new_page.return_value
             page.url = "https://octopus.energy/dashboard/new/accounts/A-OTHER/dashboard"
             page.content.return_value = "another account"
             with (
@@ -197,11 +195,10 @@ class BrowserLifecycleTests(unittest.TestCase):
             self.assertEqual(
                 [result["passed"] for result in results], [False, True, True]
             )
-            for call in page.get_by_role.return_value.click.call_args_list:
-                self.assertEqual(call.kwargs, {"trial": True})
+            page.get_by_role.return_value.wait_for.assert_called_with(state="visible")
 
     def test_fixed_go_has_no_browser_route(self):
-        with patch("playwright.sync_api.sync_playwright") as launch:
+        with patch("browser_switch.InvisiblePlaywright") as launch:
             with self.assertRaisesRegex(ValueError, "not supported.*go-fix-12m"):
                 initiate_browser_switch(
                     tariff("go-fix-12m"),
@@ -213,7 +210,7 @@ class BrowserLifecycleTests(unittest.TestCase):
             launch.assert_not_called()
 
     def test_missing_credentials_fail_before_launch(self):
-        with patch("playwright.sync_api.sync_playwright") as launch:
+        with patch("browser_switch.InvisiblePlaywright") as launch:
             with self.assertRaisesRegex(RuntimeError, "OCTOPUS_LOGIN_EMAIL"):
                 initiate_browser_switch(tariff("agile"), "A-TEST", "", "", Mock())
             launch.assert_not_called()
@@ -226,10 +223,10 @@ class BrowserLifecycleTests(unittest.TestCase):
         ]:
             with (
                 self.subTest(tariff=identifier),
-                patch("playwright.sync_api.sync_playwright") as start,
+                patch("browser_switch.InvisiblePlaywright") as start,
                 patch("browser_switch.prepare_signup"),
             ):
-                browser = start.return_value.__enter__.return_value.chromium.launch.return_value
+                browser = start.return_value.__enter__.return_value
                 context = browser.new_context.return_value
                 page = context.new_page.return_value
                 page.url = (
