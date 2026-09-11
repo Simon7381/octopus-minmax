@@ -1,4 +1,5 @@
 """Chromium tests against local HTML fixtures; no requests to Octopus are made."""
+
 import os
 import sys
 import unittest
@@ -8,11 +9,19 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 if (ROOT / ".playwright-browsers").exists():
-    os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(ROOT / ".playwright-browsers"))
+    os.environ.setdefault(
+        "PLAYWRIGHT_BROWSERS_PATH", str(ROOT / ".playwright-browsers")
+    )
 
 from playwright.sync_api import sync_playwright
-from browser_switch import (initiate_browser_switch, logged_in_page, prepare_signup,
-                            run_playwright_checks, wait_for_login_redirect)
+
+from browser_switch import (
+    initiate_browser_switch,
+    logged_in_page,
+    prepare_signup,
+    run_playwright_checks,
+    wait_for_login_redirect,
+)
 from tariff import Tariff
 
 
@@ -39,10 +48,14 @@ class SignupControlsTests(unittest.TestCase):
         self.page.close()
 
     def load(self, html):
-        self.page.set_content(html + '<button onclick="window.submitted = true">Switch Tariff</button>')
+        self.page.set_content(
+            html + '<button onclick="window.submitted = true">Switch Tariff</button>'
+        )
 
     def test_go_checks_displayed_terms_without_selecting_a_variant(self):
-        self.load('<label><input type="checkbox">I accept the <a href="/smart/terms-and-conditions/GO-FIX-12M-26-08-19/">Terms &amp; Conditions</a></label>')
+        self.load(
+            '<label><input type="checkbox">I accept the <a href="/smart/terms-and-conditions/GO-FIX-12M-26-08-19/">Terms &amp; Conditions</a></label>'
+        )
         prepare_signup(self.page, tariff("go", "GO-VAR-TEST"))
         self.assertTrue(self.page.get_by_role("checkbox").is_checked())
         self.assertIsNone(self.page.evaluate("window.submitted"))
@@ -52,18 +65,22 @@ class SignupControlsTests(unittest.TestCase):
         prepare_signup(self.page, tariff("agile"))
 
     def test_agile_checks_terms_when_present(self):
-        self.load('<label><input type="checkbox">I accept the Terms &amp; Conditions</label>')
+        self.load(
+            '<label><input type="checkbox">I accept the Terms &amp; Conditions</label>'
+        )
         prepare_signup(self.page, tariff("agile"))
         self.assertTrue(self.page.get_by_role("checkbox").is_checked())
 
     def test_cosy_selects_variable_radio_instead_of_fixed(self):
-        self.load('<label><input type="radio" name="plan" checked>Fixed</label><label><input type="radio" name="plan">Variable</label>')
+        self.load(
+            '<label><input type="radio" name="plan" checked>Fixed</label><label><input type="radio" name="plan">Variable</label>'
+        )
         prepare_signup(self.page, tariff("cosy"))
         self.assertTrue(self.page.get_by_role("radio", name="Variable").is_checked())
         self.assertFalse(self.page.get_by_role("radio", name="Fixed").is_checked())
 
     def test_cosy_selects_variable_button(self):
-        self.load('<button onclick="window.plan = \'variable\'">Variable</button>')
+        self.load("<button onclick=\"window.plan = 'variable'\">Variable</button>")
         prepare_signup(self.page, tariff("cosy"))
         self.assertEqual(self.page.evaluate("window.plan"), "variable")
 
@@ -81,16 +98,25 @@ class SignupControlsTests(unittest.TestCase):
             visited.append(target.id)
             fixtures = {
                 "go": '<label><input type="checkbox">I accept the Terms &amp; Conditions</label>',
-                "agile": '',
+                "agile": "",
                 "cosy": '<label><input type="radio" name="plan" checked>Fixed</label><label><input type="radio" name="plan">Variable</label>',
             }
             self.load(fixtures[target.id])
 
-        with patch("browser_switch.logged_in_page") as login, patch("browser_switch.open_signup", side_effect=open_fixture):
+        with (
+            patch("browser_switch.logged_in_page") as login,
+            patch("browser_switch.open_signup", side_effect=open_fixture),
+        ):
             login.return_value.__enter__.return_value = self.page
-            results = run_playwright_checks("A-TEST", "user@example.invalid", "password")
+            results = run_playwright_checks(
+                "A-TEST", "user@example.invalid", "password"
+            )
         self.assertEqual(visited, ["go", "agile", "cosy"])
-        self.assertTrue(all(result["passed"] and result["switch_button_ready"] for result in results))
+        self.assertTrue(
+            all(
+                result["passed"] and result["switch_button_ready"] for result in results
+            )
+        )
         self.assertTrue(results[0]["terms_checked"])
         self.assertTrue(results[2]["variable_selected"])
         self.assertIsNone(self.page.evaluate("window.submitted"))
@@ -112,15 +138,28 @@ class BrowserLifecycleTests(unittest.TestCase):
             browser_type = start.return_value.__enter__.return_value.chromium
             page = browser_type.launch.return_value.new_context.return_value.new_page.return_value
             page.url = "https://octopus.energy/dashboard/new/accounts/A-TEST/dashboard"
-            with logged_in_page("A-TEST", "user@example.invalid", "password") as yielded:
+            with logged_in_page(
+                "A-TEST", "user@example.invalid", "password"
+            ) as yielded:
                 self.assertIs(yielded, page)
-            self.assertEqual(page.goto.call_args_list[0].args[0], "https://octopus.energy/dashboard/")
-            self.assertEqual(page.goto.call_args_list[1].args[0], "https://octopus.energy/dashboard/")
-            self.assertTrue(any(
-                call.args and getattr(call.args[0], "pattern", "").startswith("^https://auth\\.octopus")
-                for call in page.wait_for_url.call_args_list
-            ))
-            context_options = browser_type.launch.return_value.new_context.call_args.kwargs
+            self.assertEqual(
+                page.goto.call_args_list[0].args[0], "https://octopus.energy/dashboard/"
+            )
+            self.assertEqual(
+                page.goto.call_args_list[1].args[0], "https://octopus.energy/dashboard/"
+            )
+            self.assertTrue(
+                any(
+                    call.args
+                    and getattr(call.args[0], "pattern", "").startswith(
+                        "^https://auth\\.octopus"
+                    )
+                    for call in page.wait_for_url.call_args_list
+                )
+            )
+            context_options = (
+                browser_type.launch.return_value.new_context.call_args.kwargs
+            )
             self.assertIn("Chrome/152.0.0.0", context_options["user_agent"])
             page.locator.assert_any_call("#id_auth-username")
             page.locator.assert_any_call("#id_auth-password")
@@ -131,25 +170,45 @@ class BrowserLifecycleTests(unittest.TestCase):
             page = start.return_value.__enter__.return_value.chromium.launch.return_value.new_context.return_value.new_page.return_value
             page.url = "https://octopus.energy/dashboard/new/accounts/A-OTHER/dashboard"
             page.content.return_value = "another account"
-            with self.assertRaisesRegex(RuntimeError, "does not contain the configured account"):
+            with self.assertRaisesRegex(
+                RuntimeError, "does not contain the configured account"
+            ):
                 with logged_in_page("A-TEST", "user@example.invalid", "password"):
                     pass
 
     def test_test_mode_continues_after_one_tariff_fails(self):
-        with patch("browser_switch.logged_in_page") as login, patch("browser_switch.open_signup"), \
-                patch("browser_switch.prepare_signup", side_effect=[RuntimeError("Failed"),
-                      {"terms_checked": False, "variable_selected": False},
-                      {"terms_checked": False, "variable_selected": True}]):
-            results = run_playwright_checks("A-TEST", "user@example.invalid", "password")
+        with (
+            patch("browser_switch.logged_in_page") as login,
+            patch("browser_switch.open_signup"),
+            patch(
+                "browser_switch.prepare_signup",
+                side_effect=[
+                    RuntimeError("Failed"),
+                    {"terms_checked": False, "variable_selected": False},
+                    {"terms_checked": False, "variable_selected": True},
+                ],
+            ),
+        ):
+            results = run_playwright_checks(
+                "A-TEST", "user@example.invalid", "password"
+            )
             page = login.return_value.__enter__.return_value
-            self.assertEqual([result["passed"] for result in results], [False, True, True])
+            self.assertEqual(
+                [result["passed"] for result in results], [False, True, True]
+            )
             for call in page.get_by_role.return_value.click.call_args_list:
                 self.assertEqual(call.kwargs, {"trial": True})
 
     def test_fixed_go_has_no_browser_route(self):
         with patch("playwright.sync_api.sync_playwright") as launch:
             with self.assertRaisesRegex(ValueError, "not supported.*go-fix-12m"):
-                initiate_browser_switch(tariff("go-fix-12m"), "A-TEST", "user@example.invalid", "password", Mock())
+                initiate_browser_switch(
+                    tariff("go-fix-12m"),
+                    "A-TEST",
+                    "user@example.invalid",
+                    "password",
+                    Mock(),
+                )
             launch.assert_not_called()
 
     def test_missing_credentials_fail_before_launch(self):
@@ -159,12 +218,22 @@ class BrowserLifecycleTests(unittest.TestCase):
             launch.assert_not_called()
 
     def test_enrolment_resolution_keeps_browser_alive_and_always_closes_it(self):
-        for identifier, slug in [("go", "go"), ("agile", "agile"), ("cosy", "cosy-octopus")]:
-            with self.subTest(tariff=identifier), patch("playwright.sync_api.sync_playwright") as start, patch("browser_switch.prepare_signup"):
+        for identifier, slug in [
+            ("go", "go"),
+            ("agile", "agile"),
+            ("cosy", "cosy-octopus"),
+        ]:
+            with (
+                self.subTest(tariff=identifier),
+                patch("playwright.sync_api.sync_playwright") as start,
+                patch("browser_switch.prepare_signup"),
+            ):
                 browser = start.return_value.__enter__.return_value.chromium.launch.return_value
                 context = browser.new_context.return_value
                 page = context.new_page.return_value
-                page.url = "https://octopus.energy/dashboard/new/accounts/A-TEST/dashboard"
+                page.url = (
+                    "https://octopus.energy/dashboard/new/accounts/A-TEST/dashboard"
+                )
 
                 def confirm():
                     context.close.assert_not_called()
@@ -172,8 +241,17 @@ class BrowserLifecycleTests(unittest.TestCase):
                     raise RuntimeError("No enrolment")
 
                 with self.assertRaisesRegex(RuntimeError, "No enrolment"):
-                    initiate_browser_switch(tariff(identifier), "A-TEST", "test@example.invalid", "password", confirm)
-                self.assertEqual(page.goto.call_args.args[0], f"https://octopus.energy/smart/{slug}/sign-up/?accountNumber=A-TEST")
+                    initiate_browser_switch(
+                        tariff(identifier),
+                        "A-TEST",
+                        "test@example.invalid",
+                        "password",
+                        confirm,
+                    )
+                self.assertEqual(
+                    page.goto.call_args.args[0],
+                    f"https://octopus.energy/smart/{slug}/sign-up/?accountNumber=A-TEST",
+                )
                 context.close.assert_called_once()
                 browser.close.assert_called_once()
 

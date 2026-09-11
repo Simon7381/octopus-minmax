@@ -1,21 +1,24 @@
-import time
-from datetime import date, datetime
-from typing import List, Dict, Optional, Tuple
+import logging
 import random
+import time
+from datetime import datetime
+
 import config
 from account_info import AccountInfo
 from account_manager import AccountManager
-from queries import *
-from tariff import Tariff, TARIFFS
-from query_service import QueryService
+from browser_switch import run_playwright_checks
 from comparison_engine import ComparisonEngine, ComparisonResult
 from notification_service import NotificationService
-from browser_switch import run_playwright_checks
-import logging
-logger = logging.getLogger('octobot.bot_orchestrator')
+from queries import *
+from query_service import QueryService
+from tariff import TARIFFS, Tariff
+
+logger = logging.getLogger("octobot.bot_orchestrator")
+
 
 def get_timestamp():
     return datetime.now().strftime("%d/%m/%Y %H:%M")
+
 
 class BotOrchestrator:
     def __init__(self):
@@ -28,34 +31,61 @@ class BotOrchestrator:
 
     def start(self) -> None:
         if config.TEST_PLAYWRIGHT:
-            logger.info("TEST_PLAYWRIGHT mode: checking Go, Agile and Cosy once. Switching and scheduling are disabled.")
+            logger.info(
+                "TEST_PLAYWRIGHT mode: checking Go, Agile and Cosy once. Switching and scheduling are disabled."
+            )
             try:
-                results = run_playwright_checks(config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD)
+                results = run_playwright_checks(
+                    config.ACC_NUMBER,
+                    config.OCTOPUS_LOGIN_EMAIL,
+                    config.OCTOPUS_LOGIN_PASSWD,
+                )
                 passed = sum(result["passed"] for result in results)
-                logger.info("TEST_PLAYWRIGHT finished: %s/%s passed. No tariff switches submitted.", passed, len(results))
+                logger.info(
+                    "TEST_PLAYWRIGHT finished: %s/%s passed. No tariff switches submitted.",
+                    passed,
+                    len(results),
+                )
             except Exception as exc:
                 logger.error("TEST_PLAYWRIGHT could not complete: %s", str(exc))
             return  # Leave the dashboard running; never enter the comparison loop.
 
-        self.notification_service = NotificationService(config.NOTIFICATION_URLS, config.BATCH_NOTIFICATIONS)
+        self.notification_service = NotificationService(
+            config.NOTIFICATION_URLS, config.BATCH_NOTIFICATIONS
+        )
         ns = self.notification_service
 
-        mode_msg = "ONE_OFF mode enabled" if config.ONE_OFF_RUN else f"Scheduled mode, running at {config.EXECUTION_TIME}"
-        ns.send_notification(f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - {mode_msg} \n Check port {config.WEB_PORT} for dashboard.")
+        mode_msg = (
+            "ONE_OFF mode enabled"
+            if config.ONE_OFF_RUN
+            else f"Scheduled mode, running at {config.EXECUTION_TIME}"
+        )
+        ns.send_notification(
+            f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - {mode_msg} \n Check port {config.WEB_PORT} for dashboard."
+        )
 
         while True:
             if config.ONE_OFF_RUN and not config.ONE_OFF_EXECUTED:
-                ns.send_notification(f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - Running one-off comparison")
+                ns.send_notification(
+                    f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - Running one-off comparison"
+                )
                 self._run_tariff_compare()
                 config.ONE_OFF_EXECUTED = True
             elif not config.ONE_OFF_RUN:
                 now = datetime.now()
                 current_time = now.strftime("%H:%M")
-                current_minute = now.replace(second=0, microsecond=0)  # Datetime object at minute precision
-                if current_time == config.EXECUTION_TIME and self.last_execution_datetime != current_minute:
+                current_minute = now.replace(
+                    second=0, microsecond=0
+                )  # Datetime object at minute precision
+                if (
+                    current_time == config.EXECUTION_TIME
+                    and self.last_execution_datetime != current_minute
+                ):
                     self.last_execution_datetime = current_minute
                     delay = random.randint(10, 900)
-                    ns.send_notification(f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - Initiating comparison in {delay/60:.1f} minutes")
+                    ns.send_notification(
+                        f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - Initiating comparison in {delay / 60:.1f} minutes"
+                    )
                     time.sleep(delay)
                     self._run_tariff_compare()
 
@@ -65,8 +95,9 @@ class BotOrchestrator:
         logger.debug(f"{__name__}")
         self._load_tariffs_from_ids(config.TARIFFS)
         self.query_service = QueryService(config.API_KEY, config.BASE_URL)
-        self.account_manager = AccountManager.get_instance(self.query_service, self.tariffs)
-
+        self.account_manager = AccountManager.get_instance(
+            self.query_service, self.tariffs
+        )
 
     def _load_tariffs_from_ids(self, tariff_ids: str) -> None:
         """Load tariffs from comma-separated string of IDs."""
@@ -79,7 +110,9 @@ class BotOrchestrator:
             if matched is not None:
                 matched_tariffs.append(matched)
             else:
-                self.notification_service.send_notification(f"Warning: No tariff found for ID '{tariff_id}'")
+                self.notification_service.send_notification(
+                    f"Warning: No tariff found for ID '{tariff_id}'"
+                )
 
         self.tariffs = matched_tariffs
 
@@ -103,7 +136,9 @@ class BotOrchestrator:
         # Current consumption
         current = result.current_tariff_comparison
         if current.cost_breakdown:
-            lines.append(f"Total Consumption today: {current.cost_breakdown.total_kwh:.4f} kWh")
+            lines.append(
+                f"Total Consumption today: {current.cost_breakdown.total_kwh:.4f} kWh"
+            )
             lines.append(
                 f"Current tariff {current.tariff.display_name}: "
                 f"£{current.cost_breakdown.total_cost_pounds:.2f} "
@@ -138,7 +173,9 @@ class BotOrchestrator:
         ns.send_notification(message=summary)
 
         if results.should_switch:
-            switch_message = f"Initiating Switch to {results.cheapest_tariff.display_name}"
+            switch_message = (
+                f"Initiating Switch to {results.cheapest_tariff.display_name}"
+            )
             ns.send_notification(switch_message)
             if config.DRY_RUN:
                 ns.send_notification("DRY RUN: Not going through with switch today.")
@@ -146,13 +183,17 @@ class BotOrchestrator:
                 self._execute_switch(results.cheapest_tariff, account_info)
         else:
             if results.cheapest_tariff == results.current_tariff_comparison.tariff:
-                message = (f"You are already on the cheapest tariff: "
-                          f"{results.cheapest_tariff.display_name} at "
-                          f"£{results.current_tariff_comparison.cost_breakdown.total_cost_pounds:.2f}")
+                message = (
+                    f"You are already on the cheapest tariff: "
+                    f"{results.cheapest_tariff.display_name} at "
+                    f"£{results.current_tariff_comparison.cost_breakdown.total_cost_pounds:.2f}"
+                )
             else:
-                message = (f"Not switching today - savings of (£{results.potential_savings / 100:.2f}) "
-                           f"on the cheapest tariff {results.cheapest_tariff.display_name} are below your "
-                           f"threshold of £{config.SWITCH_THRESHOLD / 100:.2f}")
+                message = (
+                    f"Not switching today - savings of (£{results.potential_savings / 100:.2f}) "
+                    f"on the cheapest tariff {results.cheapest_tariff.display_name} are below your "
+                    f"threshold of £{config.SWITCH_THRESHOLD / 100:.2f}"
+                )
             ns.send_notification(message)
 
     def _execute_switch(self, target_tariff: Tariff, account_info: AccountInfo) -> None:
@@ -162,29 +203,45 @@ class BotOrchestrator:
             ns.send_notification("ERROR: product_code is missing.")
             return
 
-        enrolment_id = self.account_manager.initiate_tariff_switch(target_tariff.product_code)
+        enrolment_id = self.account_manager.initiate_tariff_switch(
+            target_tariff.product_code
+        )
         if not enrolment_id:
             ns.send_notification("ERROR: Couldn't get enrolment ID")
             return
 
         wait_time = 120
-        ns.send_notification(f"Tariff switch requested successfully. Waiting {wait_time}s before attempting to accept new agreement.")
+        ns.send_notification(
+            f"Tariff switch requested successfully. Waiting {wait_time}s before attempting to accept new agreement."
+        )
 
         # Give octopus some time to generate the agreement
         time.sleep(wait_time)
-        accepted_version = self.account_manager.accept_new_agreement(target_tariff.product_code, enrolment_id)
+        accepted_version = self.account_manager.accept_new_agreement(
+            target_tariff.product_code, enrolment_id
+        )
         if accepted_version == "already accepted on website":
             ns.send_notification("Agreement was automatically accepted on the website.")
         else:
-            ns.send_notification(f"Accepted agreement (v.{accepted_version}). Switch successful.")
+            ns.send_notification(
+                f"Accepted agreement (v.{accepted_version}). Switch successful."
+            )
 
-        verified = self.account_manager.verify_new_agreement_status(target_tariff.product_code)
+        verified = self.account_manager.verify_new_agreement_status(
+            target_tariff.product_code
+        )
         if not verified:
-            ns.send_notification("Verification failed, waiting 20 seconds and trying again...")
+            ns.send_notification(
+                "Verification failed, waiting 20 seconds and trying again..."
+            )
             time.sleep(60)
-            verified = self.account_manager.verify_new_agreement_status(target_tariff.product_code) # Retry
+            verified = self.account_manager.verify_new_agreement_status(
+                target_tariff.product_code
+            )  # Retry
             if verified:
-                ns.send_notification("Verified new agreement successfully. Process finished.")
+                ns.send_notification(
+                    "Verified new agreement successfully. Process finished."
+                )
             else:
                 ns.send_notification(
                     f"Unable to verify new agreement after retry. "
