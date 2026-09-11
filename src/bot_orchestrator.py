@@ -246,5 +246,5 @@ class BotOrchestrator:
                 ns.send_notification(
                     f"Unable to verify new agreement after retry. "
                     f"Please check your account and emails.\n"
-                    f"https://octopus.energy/dashboard/new/accounts/{config.ACC_NUMBER}/messages"
+                    f"https://octopus.energy/dashboard/"
                 )

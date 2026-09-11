@@ -2,6 +2,7 @@ FROM docker.io/library/python:3.12-slim-bookworm
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb \
     libgtk-3-0 \
     libdbus-glib-1-2 \
     libx11-xcb1 \

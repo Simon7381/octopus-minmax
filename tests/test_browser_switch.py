@@ -32,7 +32,7 @@ def tariff(identifier, product="GO-FIX-12M-26-08-19"):
 class SignupControlsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.inv = InvisiblePlaywright()
+        cls.inv = InvisiblePlaywright(headless=True)
         cls.browser = cls.inv.__enter__()
 
     @classmethod
@@ -137,7 +137,14 @@ class BrowserLifecycleTests(unittest.TestCase):
             browser = start.return_value.__enter__.return_value
             context = browser.new_context.return_value
             page = context.new_page.return_value
-            page.url = "https://octopus.energy/dashboard/new/accounts/A-TEST/dashboard"
+            page.url = "https://auth.octopus.energy/login/"
+            page.content.return_value = "dashboard for A-TEST"
+
+            def handle_click():
+                page.url = "https://octopus.energy/dashboard/accounts/A-TEST/dashboard"
+
+            page.locator.return_value.click.side_effect = handle_click
+            page.locator.return_value.count.return_value = 0
             with logged_in_page(
                 "A-TEST", "user@example.invalid", "password"
             ) as yielded:
@@ -157,10 +164,25 @@ class BrowserLifecycleTests(unittest.TestCase):
                     for call in page.wait_for_url.call_args_list
                 )
             )
-            context_options = context.call_args if hasattr(context, 'call_args') else None
             page.locator.assert_any_call("#id_auth-username")
             page.locator.assert_any_call("#id_auth-password")
             page.locator.assert_any_call("#submit-button")
+
+    def test_login_reuses_existing_authenticated_session(self):
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            browser = start.return_value.__enter__.return_value
+            context = browser.new_context.return_value
+            page = context.new_page.return_value
+            page.url = "https://octopus.energy/dashboard/accounts/A-TEST/dashboard"
+            page.content.return_value = "authenticated dashboard for A-TEST"
+            with logged_in_page(
+                "A-TEST", "user@example.invalid", "password"
+            ) as yielded:
+                self.assertIs(yielded, page)
+            self.assertEqual(len(page.goto.call_args_list), 1)
+            self.assertEqual(
+                page.goto.call_args_list[0].args[0], "https://octopus.energy/dashboard/"
+            )
 
     def test_login_rejects_dashboard_for_another_account(self):
         with patch("browser_switch.InvisiblePlaywright") as start:

@@ -31,6 +31,20 @@ SIGNUP_FLOWS = {
 }
 
 
+def save_stage_screenshot(page, name: str) -> None:
+    try:
+        screenshot = Path("logs") / f"playwright-{name}-stage.png"
+        screenshot.parent.mkdir(parents=True, exist_ok=True)
+        page.screenshot(
+            path=str(screenshot),
+            full_page=True,
+            mask=[page.locator('input[type="password"], input[type="email"]')],
+        )
+        logger.info("Playwright stage screenshot saved to %s", screenshot)
+    except Exception:
+        logger.warning("Could not capture Playwright stage screenshot.")
+
+
 def save_failure_screenshot(page, name: str) -> None:
     try:
         screenshot = Path("logs") / f"playwright-{name}-failure.png"
@@ -99,37 +113,63 @@ def prepare_signup(page, tariff: Tariff) -> dict:
     return checks
 
 
+def is_login_required(page) -> bool:
+    url = getattr(page, "url", "")
+    if isinstance(url, str) and re.match(r"^https://auth\.octopus\.energy/login(?:/|\?|$)", url):
+        return True
+    try:
+        count_val = page.locator("#id_auth-username").count()
+        return isinstance(count_val, int) and count_val > 0
+    except Exception:
+        return False
+
+
 @contextmanager
 def logged_in_page(account_number: str, email: str, password: str):
-    """Share the same login and browser lifecycle for checks and real switches."""
-    with InvisiblePlaywright() as browser:
+    """Share the same login and browser lifecycle for checks and real switches, reusing persistent session."""
+    profile_dir = Path("logs") / "browser_profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    with InvisiblePlaywright(profile_dir=profile_dir, headless=True) as browser:
         try:
-            context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                locale="en-GB",
-                timezone_id="Europe/London",
-            )
+            is_context = hasattr(browser, "new_page") and not hasattr(browser, "new_context")
+            if is_context:
+                context = browser
+            else:
+                context = browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    locale="en-GB",
+                    timezone_id="Europe/London",
+                )
             try:
-                page = context.new_page()
+                pages = getattr(context, "pages", None)
+                if isinstance(pages, list) and len(pages) > 0:
+                    page = pages[0]
+                else:
+                    page = context.new_page()
                 page.set_default_timeout(60_000)
                 step = "opening dashboard login entry"
                 try:
                     page.goto("https://octopus.energy/dashboard/")
-                    step = "waiting for Octopus authentication page"
-                    page.wait_for_url(
-                        re.compile(r"^https://auth\.octopus\.energy/login(?:/|\?|$)")
-                    )
-                    step = "entering email"
-                    page.locator("#id_auth-username").fill(email)
-                    step = "entering password"
-                    page.locator("#id_auth-password").fill(password)
-                    step = "submitting login"
-                    page.locator("#submit-button").click()
-                    step = "waiting for login redirect"
-                    wait_for_login_redirect(page)
-                    step = "opening dashboard"
-                    page.goto("https://octopus.energy/dashboard/")
                     page.wait_for_load_state("domcontentloaded")
+                    if is_login_required(page):
+                        step = "waiting for Octopus authentication page"
+                        page.wait_for_url(
+                            re.compile(r"^https://auth\.octopus\.energy/login(?:/|\?|$)")
+                        )
+                        step = "entering email"
+                        page.locator("#id_auth-username").fill(email)
+                        step = "entering password"
+                        page.locator("#id_auth-password").fill(password)
+                        step = "submitting login"
+                        page.locator("#submit-button").click()
+                        step = "waiting for login redirect"
+                        wait_for_login_redirect(page)
+                        step = "opening dashboard"
+                        page.goto("https://octopus.energy/dashboard/")
+                        page.wait_for_load_state("domcontentloaded")
+                    else:
+                        logger.info("Reusing existing authenticated session from persistent browser profile.")
+
                     step = "verifying dashboard account"
                     page.wait_for_url(
                         re.compile(r"^https://octopus\.energy/dashboard(?:/|$)")
@@ -155,7 +195,8 @@ def logged_in_page(account_number: str, email: str, password: str):
                 )
                 yield page
             finally:
-                context.close()
+                if not is_context:
+                    context.close()
         finally:
             browser.close()
 
@@ -188,6 +229,7 @@ def run_playwright_checks(account_number: str, email: str, password: str) -> lis
                 switch_button.wait_for(state="visible")
                 if not switch_button.is_enabled():
                     raise RuntimeError("Switch Tariff button is disabled")
+                save_stage_screenshot(page, identifier)
                 result = {
                     "tariff": identifier,
                     "passed": True,
