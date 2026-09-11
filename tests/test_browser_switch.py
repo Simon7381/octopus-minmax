@@ -160,7 +160,6 @@ class BrowserLifecycleTests(unittest.TestCase):
             context_options = (
                 browser_type.launch.return_value.new_context.call_args.kwargs
             )
-            self.assertIn("Chrome/152.0.0.0", context_options["user_agent"])
             page.locator.assert_any_call("#id_auth-username")
             page.locator.assert_any_call("#id_auth-password")
             page.locator.assert_any_call("#submit-button")
@@ -170,11 +169,13 @@ class BrowserLifecycleTests(unittest.TestCase):
             page = start.return_value.__enter__.return_value.chromium.launch.return_value.new_context.return_value.new_page.return_value
             page.url = "https://octopus.energy/dashboard/new/accounts/A-OTHER/dashboard"
             page.content.return_value = "another account"
-            with self.assertRaisesRegex(
-                RuntimeError, "does not contain the configured account"
+            with (
+                self.assertRaisesRegex(
+                    RuntimeError, "does not contain the configured account"
+                ),
+                logged_in_page("A-TEST", "user@example.invalid", "password"),
             ):
-                with logged_in_page("A-TEST", "user@example.invalid", "password"):
-                    pass
+                pass
 
     def test_test_mode_continues_after_one_tariff_fails(self):
         with (

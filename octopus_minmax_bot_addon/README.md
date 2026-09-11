@@ -1,13 +1,14 @@
 # Octopus Minmax Bot 🐙🤖
 
 ## Description
+
 This bot will use your electricity usage and compare your current Smart tariff costs for the day with another smart tariff and initiate a switch if it's cheaper. See below for supported tariffs.
 
-Due to how Octopus Energy's Smart tariffs work, switching manually makes the *new* tariff take effect from the start of the day. For example, if you switch at 11 PM, the whole day's costs will be recalculated based on your new tariff, allowing you to potentially save money by tariff-hopping.
+Due to how Octopus Energy's Smart tariffs work, switching manually makes the _new_ tariff take effect from the start of the day. For example, if you switch at 11 PM, the whole day's costs will be recalculated based on your new tariff, allowing you to potentially save money by tariff-hopping.
 
 I created this because I've been a long-time Agile customer who got tired of the price spikes. I now use this to enjoy the benefits of Agile (cheap days) without the risks (expensive days).
 
-I personally have this running automatically every day at 11 PM inside a Raspberry Pi Docker container, but you can run it wherever you want.  It sends notifications and updates to a variety of services via [Apprise](https://github.com/caronc/apprise), but that's not required for it to work.
+I personally have this running automatically every day at 11 PM inside a Raspberry Pi Docker container, but you can run it wherever you want. It sends notifications and updates to a variety of services via [Apprise](https://github.com/caronc/apprise), but that's not required for it to work.
 
 ## Web Dashboard
 
@@ -20,6 +21,7 @@ After starting the bot you can access the web dashboard on `localhost:5050`
 ## How to Use
 
 ### Requirements
+
 - An Octopus Energy Account
   - In case you don't have one, we both get £50 for using my referral: https://share.octopus.energy/coral-lake-50
   - Get your API key [here](https://octopus.energy/dashboard/new/accounts/personal-details/api-access)
@@ -38,20 +40,22 @@ To install this third-party add-on:
 1. Open Home Assistant > Settings > Add-ons > Add-on Store.
 2. Click the menu (three dots in the top-right corner) and select Repositories.
 3. Paste the GitHub repository link into the field at the bottom:
-https://github.com/eelmafia/octopus-minmax
+   https://github.com/eelmafia/octopus-minmax
 4. Refresh the page if needed. The add-on will appear under **Octopus MinMax Bot**.
 
-
 ### Running Manually
+
 1. Install the Python requirements.
-   Use Python 3.12 and run `python -m playwright install --with-deps chromium` on Linux
-   (on Windows, use `python -m playwright install chromium`). The container includes Chromium
+   Use Python 3.12 and run `python -m invisible_playwright fetch` on Linux
+   (on Windows, use `python -m invisible_playwright fetch`). The container includes Chromium
    and its dependencies; see [Playwright browser installation](https://playwright.dev/python/docs/browsers).
 2. Configure the environment variables.
 3. Run `main.py`. I recommend scheduling it to run it at 11 PM in order to leave yourself an hour as a safety margin in case Octopus takes a while to generate your new agreement.
 
 ### Running using Docker
+
 Docker run command:
+
 ```
 docker run -d \
   --name MinMaxOctopusBot \
@@ -71,6 +75,7 @@ docker run -d \
   -e WEB_PASSWORD="<whatever_you_want>" \
   eelmafia/octopus-minmax-bot
 ```
+
 or use the docker-compose.yaml **Don't forget to add your environment variables**
 
 ### Website fallback for tariff switches
@@ -81,11 +86,11 @@ website using `OCTOPUS_LOGIN_EMAIL` and `OCTOPUS_LOGIN_PASSWD`. Permission error
 retry policy. Agreement acceptance continues through the API unless Octopus has
 already completed the new enrolment on the website.
 
-| Tariff ID | Signup path | Website action |
-|-----------|-------------|----------------|
-| `go` | `go` | Check I accept the Terms & Conditions, then Switch Tariff |
-| `agile` | `agile` | Check terms if displayed, then Switch Tariff |
-| `cosy` | `cosy-octopus` | Select Variable explicitly, check terms if displayed, then Switch Tariff |
+| Tariff ID | Signup path    | Website action                                                           |
+| --------- | -------------- | ------------------------------------------------------------------------ |
+| `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                |
+| `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                             |
+| `cosy`    | `cosy-octopus` | Select Variable explicitly, check terms if displayed, then Switch Tariff |
 
 Each path opens `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`
 and follows Octopus's redirect to its current signup route.
@@ -141,6 +146,7 @@ browser session or an Octopus login flow that does not challenge automation is r
    These tests use mock API responses and local HTML in Chromium, with no Octopus login
    or tariff changes. Commands use Podman's documented [build](https://docs.podman.io/en/latest/markdown/podman-build.1.html)
    and [run](https://docs.podman.io/en/latest/markdown/podman-run.1.html) options.
+
 3. Copy `podman.env.example` to `podman.env` and enter your API key, account number,
    website credentials and dashboard password. Keep `DRY_RUN=true` and `ONE_OFF=true`.
    `podman.env` is excluded from Git and container build context.
@@ -154,6 +160,7 @@ browser session or an Octopus login flow that does not challenge automation is r
    Open `http://localhost:5050`. Dry run tests the comparison and configuration;
    it does **not** exercise the website fallback. One-off mode leaves the dashboard
    running after the comparison. Stop it with `podman stop octopus-minmax-test`.
+
 5. Validate the authenticated login and signup controls for Go, Agile and Cosy,
    stopping before Switch Tariff. The automated fixtures model the reported controls;
    they cannot prove the current live page structure or account eligibility.
@@ -167,25 +174,26 @@ run `python -m unittest discover -s tests -v`. The full requirements target Pyth
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.
 
 #### Environment Variables
-| Variable                    | Description                                                                                                                                                                                                             |
-|-----------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `ACC_NUMBER`                | Your Octopus Energy account number.                                                                                                                                                                                     |
-| `API_KEY`                   | API token for accessing your Octopus Energy account.                                                                                                                                                                    |
-| `OCTOPUS_LOGIN_EMAIL`       | Octopus website email, required when API tariff initiation fails. |
-| `OCTOPUS_LOGIN_PASSWD`      | Octopus website password, required when API tariff initiation fails. |
-| `TARIFFS`                   | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                      |
-| `EXECUTION_TIME`            | (Optional) The time (HH:MM) when the script should execute. Default is `23:00` (11 PM).                                                                                                                                 |
-| `SWITCH_THRESHOLD`          | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p). |
-| `NOTIFICATION_URLS`         | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates.  See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
-| `ONE_OFF`                   | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                      |
-| `DRY_RUN`                   | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                    |
-| `TEST_PLAYWRIGHT`           | (Optional, default false) Test Go, Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off. |
-| `BATCH_NOTIFICATIONS`       | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                               |
-| `WEB_USERNAME`              | (Optional) Defaults to `admin`. Auth for the web dashboard.
-| `WEB_PASSWORD`              | (Optional) Defaults to `admin`. Auth for the web dashboard.
-| `WEB_PORT`                  | (Optional) Defaults to `5050`.
 
-*Reminder: Change the password to something else other than default. It's not meant to be secure, it's just there to stop others on your network from accessing the dashboard and your API key. If they have access to your compose/config files you're already cooked.*
+| Variable               | Description                                                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACC_NUMBER`           | Your Octopus Energy account number.                                                                                                                                                                                    |
+| `API_KEY`              | API token for accessing your Octopus Energy account.                                                                                                                                                                   |
+| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, required when API tariff initiation fails.                                                                                                                                                      |
+| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, required when API tariff initiation fails.                                                                                                                                                   |
+| `TARIFFS`              | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                     |
+| `EXECUTION_TIME`       | (Optional) The time (HH:MM) when the script should execute. Default is `23:00` (11 PM).                                                                                                                                |
+| `SWITCH_THRESHOLD`     | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p).                                                                                                                             |
+| `NOTIFICATION_URLS`    | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates. See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
+| `ONE_OFF`              | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                     |
+| `DRY_RUN`              | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                   |
+| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Go, Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
+| `BATCH_NOTIFICATIONS`  | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                              |
+| `WEB_USERNAME`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
+| `WEB_PASSWORD`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
+| `WEB_PORT`             | (Optional) Defaults to `5050`.                                                                                                                                                                                         |
+
+_Reminder: Change the password to something else other than default. It's not meant to be secure, it's just there to stop others on your network from accessing the dashboard and your API key. If they have access to your compose/config files you're already cooked._
 
 #### Supported Tariffs
 
@@ -193,29 +201,27 @@ Below is a list of supported tariffs, their IDs (to use in environment variables
 
 **None switchable tariffs are use for PRICE COMPARISON ONLY**
 
-| Tariff Name      | Tariff ID | Switchable |
-|------------------|-----------|------------|
-| Flexible Octopus | flexible  | ❌          |
-| Agile Octopus    | agile     | ✅          |
-| Cosy Octopus     | cosy      | ✅          |
-| Octopus Go       | go        | ✅          |
-| Octopus Go 12M Fixed | go-fix-12m | ✅       |
-
+| Tariff Name          | Tariff ID  | Switchable |
+| -------------------- | ---------- | ---------- |
+| Flexible Octopus     | flexible   | ❌         |
+| Agile Octopus        | agile      | ✅         |
+| Cosy Octopus         | cosy       | ✅         |
+| Octopus Go           | go         | ✅         |
+| Octopus Go 12M Fixed | go-fix-12m | ✅         |
 
 #### Setting up Apprise Notifications
 
-The `NOTIFICATION_URLS` environment variable allows you to configure notifications using the powerful [Apprise](https://github.com/caronc/apprise) library.  Apprise supports a wide variety of notification services, including Discord, Telegram, Slack, email, and many more.
+The `NOTIFICATION_URLS` environment variable allows you to configure notifications using the powerful [Apprise](https://github.com/caronc/apprise) library. Apprise supports a wide variety of notification services, including Discord, Telegram, Slack, email, and many more.
 
 To configure notifications:
 
-1.  **Determine your desired notification services:**  Decide which services you want to receive notifications on (e.g., Discord, Telegram).
+1.  **Determine your desired notification services:** Decide which services you want to receive notifications on (e.g., Discord, Telegram).
 
-2.  **Find the Apprise URL format for each service:**  Consult the [Apprise documentation](https://github.com/caronc/apprise/wiki) to find the correct URL format for each service you've chosen.  For example:
+2.  **Find the Apprise URL format for each service:** Consult the [Apprise documentation](https://github.com/caronc/apprise/wiki) to find the correct URL format for each service you've chosen. For example:
+    - **Discord:** `discord://webhook_id/webhook_token`
+    - **Telegram:** `tgram://bottoken/ChatID`
 
-    *   **Discord:** `discord://webhook_id/webhook_token`
-    *   **Telegram:** `tgram://bottoken/ChatID`
-
-3.  **Set the `NOTIFICATION_URLS` environment variable:** Create a comma-separated string containing the Apprise URLs for all your desired services.  For example:
+3.  **Set the `NOTIFICATION_URLS` environment variable:** Create a comma-separated string containing the Apprise URLs for all your desired services. For example:
 
     ```bash
     NOTIFICATION_URLS="discord://webhook_id/webhook_token,tgram://bottoken/ChatID,mailto://user:pass@example.com?to=recipient@example.com"
@@ -223,4 +229,9 @@ To configure notifications:
 
     Make sure to replace the example values with your actual credentials.
 
-4.  **Restart the container (if using Docker) or run the script:**  The bot will now send notifications to all the configured services.
+4.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.om"
+    ```
+
+    Make sure to replace the example values with your actual credentials.
+
+4. **Restart the container (if using Docker) or run the script:**  The bot will now send notifications to all the configured services.
