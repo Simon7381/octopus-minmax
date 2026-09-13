@@ -1,6 +1,6 @@
 ---
 name: Octopus MinMax Bot
-image: 
+image: simon7381/octopus-minmax
 url: https://github.com/Simon7381/octopus-minmax
 ingress: true
 ingress_port: 5050

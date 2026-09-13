@@ -1,5 +1,9 @@
 ## v2.0.1 - v2.0.1
+## What's Changed
+* Update Docker Hub image references to `simon7381/octopus-minmax` for this fork.
+* Update installation documentation.
 
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.0...v2.0.1
 
 ## v2.0.0 - v2.0.0
 ## What's Changed

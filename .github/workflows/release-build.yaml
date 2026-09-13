@@ -21,8 +21,6 @@ env:
 jobs:
   docker-build:
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.image.outputs.name }}
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
@@ -30,7 +28,6 @@ jobs:
           ref: refs/tags/${{ env.VERSION }}
 
       - name: Validate release version and set Docker image
-        id: image
         shell: bash
         run: |
           if [[ -z "${DOCKER_IMAGE//[[:space:]]/}" ]]; then
@@ -43,7 +40,6 @@ jobs:
           fi
           image="${DOCKER_IMAGE,,}"
           echo "DOCKER_IMAGE=$image" >> "$GITHUB_ENV"
-          echo "name=$image" >> "$GITHUB_OUTPUT"
 
       - name: Update version in config.py
         run: |
@@ -96,8 +92,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    env:
-      DOCKER_IMAGE: ${{ needs.docker-build.outputs.image }}
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v7
@@ -115,36 +109,58 @@ jobs:
           import shutil
           import subprocess
           from pathlib import Path
+          from urllib.parse import quote
 
           version = os.environ["VERSION"]
+          # Read the workflow variable directly: job outputs can be suppressed
+          # when the image namespace also matches the Docker username secret.
+          image = os.environ.get("DOCKER_IMAGE", "").strip().lower()
+          if not image:
+              raise SystemExit("Set the DOCKER_IMAGE repository variable before updating the add-on")
           addon = Path("octopus_minmax_bot_addon")
           path = addon / "config.yaml"
           content = path.read_text(encoding="utf-8")
-          for key, value in (("version", version), ("image", os.environ["DOCKER_IMAGE"])):
+          for key, value in (("version", version), ("image", image)):
               content, count = re.subn(
                   rf"^{key}:.*$", lambda _: f"{key}: {value}",
                   content, flags=re.MULTILINE,
               )
               if count != 1:
                   raise SystemExit(f"Expected exactly one {key} in add-on config")
-          path.write_text(content, encoding="utf-8")
-          shutil.copyfile("README.md", addon / "README.md")
-
           path = addon / "CHANGELOG.md"
           changelog = path.read_text(encoding="utf-8")
-          # Keep existing release notes and avoid duplicate entries on reruns.
-          if not re.search(rf"^## {re.escape(version)}(?:\s|$)", changelog, re.MULTILINE):
+          # Release headings are distinct from subheadings such as What's Changed.
+          headings = list(re.finditer(
+              r"^## (?P<version>v?\d[^\s]*)[^\n]*$", changelog, re.MULTILINE,
+          ))
+          current = next((h for h in headings if h["version"] == version), None)
+          start = current.start() if current else 0
+          end = next((h.start() for h in headings if h.start() > start), len(changelog)) if current else 0
+          existing_notes = changelog[current.end():end].strip() if current else ""
+          # Preserve hand-written entries, but repair existing empty entries.
+          if not existing_notes:
               release = json.loads(subprocess.check_output([
                   "gh", "release", "view", version,
                   "--repo", os.environ["GITHUB_REPOSITORY"],
                   "--json", "name,body",
               ], text=True, encoding="utf-8"))
               title = release["name"] or version
-              notes = release["body"] or ""
-              path.write_text(
-                  f"## {version} - {title}\n{notes}\n\n{changelog}",
-                  encoding="utf-8",
-              )
+              notes = (release["body"] or "").strip()
+              if not notes:
+                  repository_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+                  previous = next((h["version"] for h in headings if h.start() >= end and h["version"] != version), None)
+                  if previous:
+                      link = f"{repository_url}/compare/{quote(previous, safe='')}...{quote(version, safe='')}"
+                      notes = f"No release notes were provided.\n\n**Full Changelog**: {link}"
+                  else:
+                      notes = f"**Release details**: {repository_url}/releases/tag/{quote(version, safe='')}"
+              entry = f"## {version} - {title}\n{notes}\n\n"
+              changelog = changelog[:start] + entry + changelog[end:]
+
+          # Resolve and validate all metadata before changing any files.
+          (addon / "config.yaml").write_text(content, encoding="utf-8")
+          shutil.copyfile("README.md", addon / "README.md")
+          path.write_text(changelog, encoding="utf-8")
           PY
 
       # Repository Settings > Actions > General must allow Actions to create PRs.
