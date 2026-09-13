@@ -3,7 +3,7 @@ version: "3.8"
 services:
   minmax_octopus_bot:
     container_name: MinMaxOctopusBot
-    image: eelmafia/octopus-minmax-bot
+    image: Simon7381/octopus-minmax-bot
     restart: unless-stopped
     ports:
       - "5050:5050"
