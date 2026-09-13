@@ -1,3 +1,16 @@
+## v2.0.0 - v2.0.0
+## What's Changed
+* Add an invisible-playwright website fallback for Go, Agile and Cosy tariff switches when API initiation fails, including immediate fallback for permission error `KT-CT-1111`. Fixed Go remains API-only.
+* Add Octopus website login credentials to the add-on options and dashboard, preserving saved passwords when the dashboard password field is left blank.
+* Verify the signed-in account, reuse matching pending enrolments, and confirm new enrolments for the exact target product to avoid duplicate or incorrect switches. Skip API agreement acceptance when the website has already completed it.
+* Add `TEST_PLAYWRIGHT` mode to check website login and signup forms without submitting tariff switches, with per-tariff results and failure screenshots. Interactive CAPTCHA challenges stop browser automation.
+* Bundle invisible-playwright's patched Firefox and browser dependencies in the Python 3.12 container, with updated Docker and Podman setup instructions and automated browser, switching and configuration tests.
+
+## Breaking Changes
+* Container and Home Assistant add-on support is now limited to `amd64` and `aarch64` (64-bit); 32-bit ARM targets are no longer supported.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v1.0.9...v2.0.0
+
 ## v1.0.9 - v1.0.9
 ## What's Changed
 * Update Addon Configuration to v1.0.8 by @github-actions[bot] in https://github.com/eelmafia/octopus-minmax/pull/163
