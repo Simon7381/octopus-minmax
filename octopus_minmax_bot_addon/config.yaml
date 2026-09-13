@@ -1,7 +1,7 @@
 ---
 name: Octopus MinMax Bot
-image: eelmafia/octopus-minmax-bot
-url: https://github.com/eelmafia/octopus-minmax
+image: Simon7381/octopus-minmax-bot
+url: https://github.com/Simon7381/octopus-minmax
 ingress: true
 ingress_port: 5050
 ports:
@@ -17,7 +17,6 @@ legacy: true
 description: A bot to automatically compare and switch smart electricity tariffs on Octopus Energy
 arch:
   - amd64
-  - aarch64
 options:
   API_KEY: "API KEY HERE"
   ACC_NUMBER: "ACC NUMBER HERE"
