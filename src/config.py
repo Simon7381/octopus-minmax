@@ -7,13 +7,16 @@ BOT_VERSION = "v.local"
 API_KEY = os.getenv("API_KEY", "")
 # Your Octopus Energy account number. Starts with A-
 ACC_NUMBER = os.getenv("ACC_NUMBER", "")
+# Website credentials, used only when API tariff initiation fails.
+OCTOPUS_LOGIN_EMAIL = os.getenv("OCTOPUS_LOGIN_EMAIL", "")
+OCTOPUS_LOGIN_PASSWD = os.getenv("OCTOPUS_LOGIN_PASSWD", "")
 BASE_URL = os.getenv("BASE_URL", "https://api.octopus.energy/v1")
 # Comma-separated list of Apprise notification URLs
 NOTIFICATION_URLS = os.getenv("NOTIFICATION_URLS", "")
 # Whether to send all the notifications as a batch or individually
 BATCH_NOTIFICATIONS = os.getenv("BATCH_NOTIFICATIONS", "false") in ["true", "True", "1"]
 
-EXECUTION_TIME = os.getenv("EXECUTION_TIME", "23:00")
+EXECUTION_TIME = os.getenv("EXECUTION_TIME", "23:30")
 
 # A threshold (in pence) over which the difference between the tariffs must be before the switch happens.
 SWITCH_THRESHOLD = int(os.getenv("SWITCH_THRESHOLD", 2))
@@ -27,6 +30,9 @@ ONE_OFF_EXECUTED = False
 
 # Whether to notify the user of a switch but not actually switch
 DRY_RUN = os.getenv("DRY_RUN", "false") in ["true", "True", "1"]
+# On startup, check all three website signup flows once without submitting.
+# Takes precedence over comparisons, ONE_OFF and scheduled switching.
+TEST_PLAYWRIGHT = os.getenv("TEST_PLAYWRIGHT", "false").lower() in ["true", "1"]
 
 # Web UI authentication
 WEB_USERNAME = os.getenv("WEB_USERNAME", "admin")

@@ -1,5 +1,14 @@
 ---
 configuration:
+  TEST_PLAYWRIGHT:
+    name: Test Playwright
+    description: Check Go, Agile and Cosy signup forms once at startup without submitting a switch. Disables comparisons and scheduling until restarted with this option off.
+  OCTOPUS_LOGIN_EMAIL:
+    name: Octopus Login Email
+    description: Octopus website email used when API tariff initiation fails.
+  OCTOPUS_LOGIN_PASSWD:
+    name: Octopus Login Password
+    description: Octopus website password used when API tariff initiation fails.
   ONE_OFF:
     name: One Off Execution
     description: Run the comparison ONCE then quit.

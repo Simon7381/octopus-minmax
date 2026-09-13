@@ -16,17 +16,18 @@ init: false
 legacy: true
 description: A bot to automatically compare and switch smart electricity tariffs on Octopus Energy
 arch:
-  - armhf
-  - armv7
   - amd64
   - aarch64
 options:
   API_KEY: "API KEY HERE"
   ACC_NUMBER: "ACC NUMBER HERE"
-  EXECUTION_TIME: "23:00"
+  OCTOPUS_LOGIN_EMAIL: ""
+  OCTOPUS_LOGIN_PASSWD: ""
+  EXECUTION_TIME: "23:30"
   SWITCH_THRESHOLD: 2
   ONE_OFF: false
   DRY_RUN: false
+  TEST_PLAYWRIGHT: false
   NOTIFICATION_URLS: ""
   TARIFFS: "agile,go,flexible"
   TZ: "Europe/London"
@@ -36,10 +37,13 @@ options:
 schema:
   API_KEY: str
   ACC_NUMBER: str
+  OCTOPUS_LOGIN_EMAIL: str?
+  OCTOPUS_LOGIN_PASSWD: password?
   EXECUTION_TIME: str
   SWITCH_THRESHOLD: int
   ONE_OFF: bool
   DRY_RUN: bool
+  TEST_PLAYWRIGHT: bool
   NOTIFICATION_URLS: str
   TARIFFS: str
   TZ: str
