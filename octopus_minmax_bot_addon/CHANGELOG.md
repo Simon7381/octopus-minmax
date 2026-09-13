@@ -1,3 +1,6 @@
+## v2.0.1 - v2.0.1
+
+
 ## v2.0.0 - v2.0.0
 ## What's Changed
 * Add an invisible-playwright website fallback for Go, Agile and Cosy tariff switches when API initiation fails, including immediate fallback for permission error `KT-CT-1111`. Fixed Go remains API-only.

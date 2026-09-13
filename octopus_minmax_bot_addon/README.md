@@ -237,3 +237,4 @@ To configure notifications:
     ```
 
 5.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
+6.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
