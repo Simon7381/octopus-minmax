@@ -16,7 +16,7 @@ NOTIFICATION_URLS = os.getenv("NOTIFICATION_URLS", "")
 # Whether to send all the notifications as a batch or individually
 BATCH_NOTIFICATIONS = os.getenv("BATCH_NOTIFICATIONS", "false") in ["true", "True", "1"]
 
-EXECUTION_TIME = os.getenv("EXECUTION_TIME", "23:00")
+EXECUTION_TIME = os.getenv("EXECUTION_TIME", "23:30")
 
 # A threshold (in pence) over which the difference between the tariffs must be before the switch happens.
 SWITCH_THRESHOLD = int(os.getenv("SWITCH_THRESHOLD", 2))
