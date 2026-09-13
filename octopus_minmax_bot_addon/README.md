@@ -40,7 +40,7 @@ To install this third-party add-on:
 1. Open Home Assistant > Settings > Add-ons > Add-on Store.
 2. Click the menu (three dots in the top-right corner) and select Repositories.
 3. Paste the GitHub repository link into the field at the bottom:
-   https://github.com/eelmafia/octopus-minmax
+   https://github.com/Simon7381/octopus-minmax
 4. Refresh the page if needed. The add-on will appear under **Octopus MinMax Bot**.
 
 ### Running Manually
@@ -237,3 +237,4 @@ To configure notifications:
     ```
 
 5.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
+6.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
