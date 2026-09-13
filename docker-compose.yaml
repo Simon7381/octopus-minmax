@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   minmax_octopus_bot:
@@ -13,11 +13,14 @@ services:
       - TZ=Europe/London
       - ACC_NUMBER=<your_account_number>
       - API_KEY=<your_api_key>
-      - EXECUTION_TIME=23:00
+      - OCTOPUS_LOGIN_EMAIL=${OCTOPUS_LOGIN_EMAIL:-}
+      - OCTOPUS_LOGIN_PASSWD=${OCTOPUS_LOGIN_PASSWD:-}
+      - EXECUTION_TIME=23:30
       - SWITCH_THRESHOLD=2
       - NOTIFICATION_URLS=<your_apprise_notification_urls>
       - ONE_OFF=false
       - DRY_RUN=false
+      - TEST_PLAYWRIGHT=false
       - TARIFFS=agile,flexible
       - WEB_USERNAME=admin
       - WEB_PASSWORD=admin # not meant to be secure

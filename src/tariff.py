@@ -1,20 +1,39 @@
 import re
 
+
 class Tariff:
-    def __init__(self,
-                 id: str, display_name: str, api_display_name: str, tariff_code_matcher: str,
-                 url_tariff_name: str, switchable: bool, product_code: str = None):
+    def __init__(
+        self,
+        id: str,
+        display_name: str,
+        api_display_name: str,
+        tariff_code_matcher: str,
+        url_tariff_name: str,
+        switchable: bool,
+        product_code: str = None,
+    ):
         self.id = id  # Represents the unique identifier for the tariff.
-        self.display_name = display_name  # The user-friendly name of the tariff for display purposes.
-        self.api_display_name = api_display_name  # The name used for API interactions with the tariff.
+        self.display_name = (
+            display_name  # The user-friendly name of the tariff for display purposes.
+        )
+        self.api_display_name = (
+            api_display_name  # The name used for API interactions with the tariff.
+        )
         self.tariff_code_matcher = tariff_code_matcher  # A string used to match against current tariff names to determine applicability.
-        self.url_tariff_name = url_tariff_name  # The tariff name formatted for use in URLs.
+        self.url_tariff_name = (
+            url_tariff_name  # The tariff name formatted for use in URLs.
+        )
         self.switchable = switchable  # Whether this tariff can be switched to or not
-        self.product_code = product_code # Product code used in API e.g. "GO-VAR-22-10-14"
+        self.product_code = (
+            product_code  # Product code used in API e.g. "GO-VAR-22-10-14"
+        )
 
     def is_tariff(self, current_tariff_name: str) -> bool:
         """Check if the given tariff name matches the tariff code matcher using regex."""
-        return re.search(self.tariff_code_matcher, current_tariff_name,  re.IGNORECASE) is not None
+        return (
+            re.search(self.tariff_code_matcher, current_tariff_name, re.IGNORECASE)
+            is not None
+        )
 
     def __eq__(self, other):
         """Compare two tariffs based on their ID."""
@@ -30,9 +49,29 @@ class Tariff:
 
 
 TARIFFS = [
-    Tariff("go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True), # Octopus Go (Variable)
-    Tariff("go-fix-12m", "Octopus Go 12M Fixed", "Octopus Go 12M Fixed", r"-go-fix-", "go", True),
-    Tariff("agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True), # Octopus Agile
-    Tariff("cosy", "Cosy Octopus", "Cosy Octopus", r"-cosy-(?!.*fix)", r"cosy-octopus", True), # Octopus Cosy (Variable is the default so don't match anything with 'fix' in the name)
-    Tariff("flexible", "Flexible Octopus", "Flexible Octopus", r"(?<!go-)var", "", False) # Flexible Octopus
+    Tariff(
+        "go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True
+    ),  # Octopus Go (Variable)
+    Tariff(
+        "go-fix-12m",
+        "Octopus Go 12M Fixed",
+        "Octopus Go 12M Fixed",
+        r"-go-fix-",
+        "go",
+        True,
+    ),
+    Tariff(
+        "agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True
+    ),  # Octopus Agile
+    Tariff(
+        "cosy",
+        "Cosy Octopus",
+        "Cosy Octopus",
+        r"-cosy-(?!.*fix)",
+        r"cosy-octopus",
+        True,
+    ),  # Octopus Cosy (Variable is the default so don't match anything with 'fix' in the name)
+    Tariff(
+        "flexible", "Flexible Octopus", "Flexible Octopus", r"(?<!go-)var", "", False
+    ),  # Flexible Octopus
 ]
