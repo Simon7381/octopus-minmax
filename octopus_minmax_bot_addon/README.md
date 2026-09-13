@@ -228,12 +228,4 @@ To configure notifications:
 
     Make sure to replace the example values with your actual credentials.
 
-4.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.om"
-
-    ```
-
-    Make sure to replace the example values with your actual credentials.
-
-    ```
-
-5.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
+4.  **Restart the container (if using Docker) or run the script:** The bot will now send notifications to all the configured services.
