@@ -72,7 +72,7 @@ docker run -d \
   -e BATCH_NOTIFICATIONS=false \
   -e WEB_USERNAME="<whatever_you_want>" \
   -e WEB_PASSWORD="<whatever_you_want>" \
-  simon7381/octopus-minmax-bot
+  simon7381/octopus-minmax
 ```
 
 or use the docker-compose.yaml **Don't forget to add your environment variables**
