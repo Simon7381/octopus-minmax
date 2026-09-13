@@ -4,88 +4,160 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (for example, v2.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ github.event.release.tag_name || inputs.tag }}
+  DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
 
 jobs:
   docker-build:
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.name }}
     steps:
-      # Check out the code
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.VERSION }}
 
-      # Update version in config.py
+      - name: Validate release version and set Docker image
+        id: image
+        shell: bash
+        run: |
+          if [[ -z "${DOCKER_IMAGE//[[:space:]]/}" ]]; then
+            echo "::error::Set the DOCKER_IMAGE repository variable to your Docker Hub namespace/image (without a tag)."
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+            echo "::error::The release tag must be a valid Docker tag."
+            exit 1
+          fi
+          image="${DOCKER_IMAGE,,}"
+          echo "DOCKER_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+
       - name: Update version in config.py
         run: |
-          # Extract version from tag
-          VERSION="${{ github.event.release.tag_name }}"
-          
-          # Update the BOT_VERSION in config.py (this change won't be committed)
-          sed -i 's/BOT_VERSION = "v\.local"/BOT_VERSION = "'"$VERSION"'"/' src/config.py
-          
-          # Show the change for debugging
-          echo "Updated config.py with version $VERSION"
-          grep BOT_VERSION src/config.py
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
 
-      # Log in to Docker Hub
+          path = Path("src/config.py")
+          content, count = re.subn(
+              r'^BOT_VERSION = .*$',
+              lambda _: "BOT_VERSION = " + json.dumps(os.environ["VERSION"]),
+              path.read_text(encoding="utf-8"),
+              flags=re.MULTILINE,
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one BOT_VERSION assignment")
+          path.write_text(content, encoding="utf-8")
+          PY
+
       - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Set up Docker Buildx
+      - name: Set up QEMU for ARM64 builds
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v4
 
-      # Get repository variables
-      - name: Set Docker image variables
-        run: |
-          echo "DOCKER_IMAGE=${{ vars.DOCKER_IMAGE }}" >> $GITHUB_ENV
-
-      # Build and Push Docker Image
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: .
+          file: dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.DOCKER_IMAGE }}:latest
-            ${{ env.DOCKER_IMAGE }}:${{ github.event.release.tag_name }}
+            ${{ env.DOCKER_IMAGE }}:${{ env.VERSION }}
+
   update-addon:
+    needs: docker-build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      DOCKER_IMAGE: ${{ needs.docker-build.outputs.image }}
     steps:
-      # Step 1: Checkout the repository
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - name: Checkout default branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
-      # Step 2: Get the version tag from the release and set it as an environment variable
-      - name: Get version tag from the release
+      - name: Update add-on configuration and release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "VERSION=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import shutil
+          import subprocess
+          from pathlib import Path
 
-      # Step 3: Update version in config.yaml
-      - name: Update version in config.yaml
-        run: |
-          sed -i "s/version: .*/version: ${{ env.VERSION }}/" octopus_minmax_bot_addon/config.yaml
+          version = os.environ["VERSION"]
+          addon = Path("octopus_minmax_bot_addon")
+          path = addon / "config.yaml"
+          content = path.read_text(encoding="utf-8")
+          for key, value in (("version", version), ("image", os.environ["DOCKER_IMAGE"])):
+              content, count = re.subn(
+                  rf"^{key}:.*$", lambda _: f"{key}: {value}",
+                  content, flags=re.MULTILINE,
+              )
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one {key} in add-on config")
+          path.write_text(content, encoding="utf-8")
+          shutil.copyfile("README.md", addon / "README.md")
 
-      # Step 4: Copy README.md to octopus_minmax_bot_addon
-      - name: Copy README.md to octopus_minmax_bot_addon
-        run: cp README.md octopus_minmax_bot_addon/README.md
+          path = addon / "CHANGELOG.md"
+          changelog = path.read_text(encoding="utf-8")
+          # Keep existing release notes and avoid duplicate entries on reruns.
+          if not re.search(rf"^## {re.escape(version)}(?:\s|$)", changelog, re.MULTILINE):
+              release = json.loads(subprocess.check_output([
+                  "gh", "release", "view", version,
+                  "--repo", os.environ["GITHUB_REPOSITORY"],
+                  "--json", "name,body",
+              ], text=True, encoding="utf-8"))
+              title = release["name"] or version
+              notes = release["body"] or ""
+              path.write_text(
+                  f"## {version} - {title}\n{notes}\n\n{changelog}",
+                  encoding="utf-8",
+              )
+          PY
 
-      # Step 5: Add release notes to CHANGELOG.md
-      - name: Add release notes to CHANGELOG.md
-        run: |
-          RELEASE_NOTES=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ env.VERSION }}" | jq -r '.body')
-          RELEASE_TITLE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ env.VERSION }}" | jq -r '.name')
-          echo -e "## ${{ env.VERSION }} - ${RELEASE_TITLE}\n${RELEASE_NOTES}\n" | cat - octopus_minmax_bot_addon/CHANGELOG.md > temp && mv temp octopus_minmax_bot_addon/CHANGELOG.md
-
-      # Step 6: Create Pull Request
+      # Repository Settings > Actions > General must allow Actions to create PRs.
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v3
+        uses: peter-evans/create-pull-request@v8
         with:
           title: "Update Addon Configuration to ${{ env.VERSION }}"
-          body: "This PR updates the addon configuration to the tagged release version and includes changes to README and CHANGELOG."
-          base: main
+          body: "Updates the add-on image and version after a successful release build, and synchronizes README and CHANGELOG."
+          commit-message: "Update add-on configuration to ${{ env.VERSION }}"
+          base: ${{ github.event.repository.default_branch }}
           branch: update-addon-config-${{ env.VERSION }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: |
+            octopus_minmax_bot_addon/config.yaml
+            octopus_minmax_bot_addon/README.md
+            octopus_minmax_bot_addon/CHANGELOG.md
