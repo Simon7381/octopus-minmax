@@ -8,6 +8,7 @@ from account_info import AccountInfo
 from account_manager import AccountManager
 from browser_switch import run_playwright_checks
 from comparison_engine import ComparisonEngine, ComparisonResult
+from diagnostics import log_failure
 from notification_service import NotificationService
 from queries import *
 from query_service import QueryService
@@ -47,6 +48,7 @@ class BotOrchestrator:
                     len(results),
                 )
             except Exception as exc:
+                log_failure(logger, "TEST_PLAYWRIGHT startup check failed", exc)
                 logger.error("TEST_PLAYWRIGHT could not complete: %s", str(exc))
             return  # Leave the dashboard running; never enter the comparison loop.
 
@@ -125,6 +127,7 @@ class BotOrchestrator:
 
             self._compare_and_switch()
         except Exception as e:
+            log_failure(logger, "Tariff comparison/switch failed; see preceding stage logs", e)
             ns.send_notification(message=str(e), title="Octobot Error", is_error=True)
         finally:
             if config.BATCH_NOTIFICATIONS:

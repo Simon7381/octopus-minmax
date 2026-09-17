@@ -14,6 +14,8 @@ if (ROOT / ".playwright-browsers").exists():
     )
 
 from invisible_playwright import InvisiblePlaywright
+from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError
+from playwright.sync_api import Error
 
 from browser_switch import (
     initiate_browser_switch,
@@ -122,6 +124,50 @@ class SignupControlsTests(unittest.TestCase):
 
 
 class BrowserLifecycleTests(unittest.TestCase):
+    def test_login_inspection_error_is_not_treated_as_authenticated(self):
+        with patch("browser_switch.InvisiblePlaywright") as start, \
+                patch("browser_switch.save_failure_screenshot") as screenshot, \
+                self.assertLogs("octobot.browser_switch", level="DEBUG") as captured:
+            page = start.return_value.__enter__.return_value.new_context.return_value.new_page.return_value
+            page.url = "https://octopus.energy/dashboard/"
+            page.locator.return_value.count.side_effect = InvisiblePlaywrightError(
+                "Locator.count: Failed to find execution context with id = id-9 private-value"
+            )
+            with self.assertRaisesRegex(RuntimeError, "checking whether login is required.*Locator.count"):
+                with logged_in_page("A-TEST", "email", "password"):
+                    self.fail("Failed page inspection must not yield an authenticated page")
+            screenshot.assert_called_once_with(page, "login")
+        self.assertNotIn("private-value", "\n".join(captured.output))
+
+    def test_context_error_reports_stage_and_does_not_submit_or_leak_call_log(self):
+        with patch("browser_switch.logged_in_page") as login, \
+                patch("browser_switch.open_signup"), \
+                patch("browser_switch.prepare_signup", side_effect=InvisiblePlaywrightError(
+                    "Locator.count: Failed to find execution context with id = id-9 password=private-password"
+                )), \
+                patch("browser_switch.save_failure_screenshot") as screenshot, \
+                self.assertLogs("octobot.browser_switch", level="DEBUG") as captured:
+            resolve = Mock()
+            with self.assertRaisesRegex(RuntimeError, "preparing agile signup controls.*Locator.count") as raised:
+                initiate_browser_switch(tariff("agile"), "A-TEST", "email", "password", resolve)
+            page = login.return_value.__enter__.return_value
+            page.get_by_role.assert_not_called()
+            resolve.assert_not_called()
+            screenshot.assert_called_once_with(page, "agile")
+        self.assertNotIn("private-password", str(raised.exception))
+        self.assertNotIn("private-password", "\n".join(captured.output))
+
+    def test_submission_error_is_not_retried_and_warns_to_check_account(self):
+        with patch("browser_switch.logged_in_page") as login, \
+                patch("browser_switch.open_signup"), \
+                patch("browser_switch.prepare_signup"), \
+                patch("browser_switch.save_failure_screenshot"):
+            page = login.return_value.__enter__.return_value
+            page.get_by_role.return_value.click.side_effect = Error("execution context was destroyed")
+            with self.assertRaisesRegex(RuntimeError, "check your account before retrying"):
+                initiate_browser_switch(tariff("agile"), "A-TEST", "email", "password", Mock())
+            page.get_by_role.return_value.click.assert_called_once()
+
     def test_visible_hcaptcha_stops_login_check(self):
         page = Mock()
         page.url = "https://auth.octopus.energy/login/"

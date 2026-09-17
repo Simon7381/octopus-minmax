@@ -178,15 +178,17 @@ class AccountManager:
             change_date=change_date.isoformat(),  # Ensure date is in YYYY-MM-DD format
         )
         try:
+            logger.info("Requesting API tariff initiation for %s.", target_product_code)
             result = self.query_service.execute_gql_query(query)
             enrolment = (result.get("startOnboardingProcess") or {}).get(
                 "productEnrolment"
             ) or {}
             if not enrolment.get("id"):
                 raise RuntimeError("Tariff initiation returned no enrolment ID")
+            logger.info("API tariff initiation succeeded for %s.", target_product_code)
             return enrolment["id"]
         except Exception as exc:
-            logger.warning("API tariff initiation failed (%s).", type(exc).__name__)
+            logger.warning("API tariff initiation failed (%s); checking website fallback for %s.", type(exc).__name__, target_product_code)
             return self._initiate_tariff_switch_in_browser(target_product_code)
 
     def _fetch_enrolments(self) -> list[dict]:
@@ -234,6 +236,7 @@ class AccountManager:
 
         # A failed API response may still have created an enrolment. Reuse it.
         before = self._fetch_enrolments()
+        logger.debug("Found %s enrolments before website submission.", len(before))
         pending_id = self._matching_enrolment(before, target_product_code)
         if pending_id:
             logger.info("Using existing in-progress enrolment for the target product.")
@@ -242,6 +245,7 @@ class AccountManager:
 
         def wait_for_enrolment():
             for attempt in range(13):
+                logger.debug("Polling target product enrolment: attempt %s/13, product=%s.", attempt + 1, target_product_code)
                 entries = [
                     entry
                     for entry in self._fetch_enrolments()
@@ -266,6 +270,7 @@ class AccountManager:
                         "Multiple completed target enrolments; check your Octopus account"
                     )
                 if completed:
+                    logger.info("Target product enrolment completed on the website.")
                     enrolment_id = completed[0]["id"]
                     self._website_accepted_enrolments.add(
                         (target_product_code, enrolment_id)
@@ -273,6 +278,7 @@ class AccountManager:
                     return enrolment_id
                 enrolment_id = self._matching_enrolment(entries, target_product_code)
                 if enrolment_id:
+                    logger.info("Found new in-progress enrolment for target product.")
                     return enrolment_id
                 if attempt < 12:
                     time.sleep(10)
@@ -291,6 +297,7 @@ class AccountManager:
         )
 
     def accept_new_agreement(self, product_code: str, enrolment_id: str) -> str | None:
+        logger.info("Checking agreement acceptance for %s.", product_code)
         if (product_code, enrolment_id) in self._website_accepted_enrolments:
             return "already accepted on website"
         # get terms and conditions version
@@ -309,6 +316,7 @@ class AccountManager:
 
     def verify_new_agreement_status(self, product_code: str | None = None) -> bool:
         """Verifies if the new tariff agreement is active as of today."""
+        logger.info("Verifying active agreement for %s.", product_code or "current product")
         query = account_query.format(acc_number=self.config.ACC_NUMBER)
         result = self.query_service.execute_gql_query(query)
 

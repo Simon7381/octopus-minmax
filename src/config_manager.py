@@ -2,6 +2,7 @@ import re
 import threading
 
 import config
+from logger import setup_logging
 
 _config_lock = threading.Lock()
 
@@ -10,6 +11,7 @@ def get_config():
     """Get current configuration as dictionary (thread-safe)"""
     with _config_lock:
         return {
+            "debug": config.DEBUG,
             "api_key": config.API_KEY,
             "acc_number": config.ACC_NUMBER,
             "octopus_login_email": config.OCTOPUS_LOGIN_EMAIL,
@@ -31,6 +33,10 @@ def update_config(new_values):
     """Update configuration at runtime (called by web UI) - thread-safe"""
     with _config_lock:
         previous_one_off = config.ONE_OFF_RUN
+        config.DEBUG = str(new_values.get("debug", "false")).lower() in [
+            "true", "1", "yes", "on",
+        ]
+        setup_logging()
 
         if new_values.get("api_key"):
             config.API_KEY = new_values["api_key"]

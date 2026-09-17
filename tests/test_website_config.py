@@ -10,6 +10,18 @@ from web_server import app
 
 
 class WebsiteConfigTests(unittest.TestCase):
+    def test_dashboard_debug_checkbox_reconfigures_logging_in_both_directions(self):
+        with patch.dict(config.__dict__, {"DEBUG": False, "WEB_USERNAME": "test", "WEB_PASSWORD": "test"}), \
+                patch("config_manager.setup_logging") as setup, app.test_client() as client:
+            response = client.post("/config", data={"debug": "on"}, auth=("test", "test"))
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(config.DEBUG)
+            self.assertTrue(config_manager.get_config()["debug"])
+            response = client.post("/config", data={}, auth=("test", "test"))
+            self.assertEqual(response.status_code, 302)
+            self.assertFalse(config.DEBUG)
+            self.assertEqual(setup.call_count, 2)
+
     def test_blank_password_preserves_existing_value_without_exposing_it(self):
         with patch.dict(config.__dict__, {"OCTOPUS_LOGIN_PASSWD": "saved-secret"}):
             config_manager.update_config({"octopus_login_email": "user@example.invalid", "octopus_login_passwd": ""})

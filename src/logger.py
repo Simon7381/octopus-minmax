@@ -2,18 +2,23 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+import config
 
-def setup_logging():
+
+def setup_logging(log_dir="logs"):
     """Configure logging for the application."""
 
-    log_dir = "logs"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
     logger = logging.getLogger("octobot")
-    logger.setLevel(logging.DEBUG)
+    level = logging.DEBUG if config.DEBUG else logging.INFO
+    logger.setLevel(level)
+    logger.propagate = False
     # Prevent duplicate handlers if called multiple times
     if logger.handlers:
+        for handler in logger.handlers:
+            handler.setLevel(level)
         return logger
 
     # Create formatters
@@ -30,12 +35,12 @@ def setup_logging():
         maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
     file_handler.setFormatter(detailed_formatter)
 
     # Console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(level)
     console_handler.setFormatter(simple_formatter)
 
     # Add handlers
@@ -43,6 +48,3 @@ def setup_logging():
     logger.addHandler(console_handler)
 
     return logger
-
-
-logger = setup_logging()
