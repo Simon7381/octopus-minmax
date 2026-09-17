@@ -114,6 +114,37 @@ in a local `.env` file or export them before starting Compose.
 Container images support `amd64` and `arm64` (64-bit); the browser fallback does not
 support the old 32-bit ARM add-on targets.
 
+### Debugging a failed website switch
+
+Set `DEBUG: true` in the Home Assistant add-on configuration and restart the add-on.
+For Docker/Compose, set `DEBUG=true` and recreate the container. You can also toggle
+**Debug logging** on the web dashboard for the current process without restarting.
+After troubleshooting, set it back to `false`; startup, comparison results, fallback
+selection, signup readiness, submission, enrolment verification, warnings and errors
+remain visible at INFO or above. Debug logging does not send extra Discord messages.
+
+Both the container/add-on console and `logs/octobot.log` use the selected level.
+DEBUG adds browser stages, HTTP status/error codes, enrolment polling attempts and
+exception stack locations. Raw API bodies, token values and Playwright call logs are
+omitted because they can contain credentials or account data. Log files rotate at
+10 MB, retaining five backups.
+
+A browser failure identifies the stage and operation (for example, preparing Agile
+signup controls / `Locator.count`). A missing execution context is classified in the
+error message; it can occur during navigation, but the message alone does not establish
+the cause. Failures with an open page attempt to save a screenshot under
+`logs/playwright-<tariff>-failure.png` or `logs/playwright-login-failure.png`.
+Email and password inputs are masked; screenshots may still contain account details.
+If submission was attempted, check your Octopus account and emails before retrying.
+
+To collect diagnostics without submitting a switch, use `TEST_PLAYWRIGHT=true` with
+`DEBUG=true`, then restart. Switch `TEST_PLAYWRIGHT` off and restart when finished.
+`DRY_RUN` alone does not exercise the browser fallback.
+
+The release workflow builds the selected release tag. Create a new release/tag that
+contains these changes; rerunning a build for an older tag will use the older code.
+Install the resulting image/add-on update before enabling the new option.
+
 ### Testing on Windows with Podman Desktop
 
 Set `TEST_PLAYWRIGHT=true` in your Compose environment and recreate the container to
@@ -186,6 +217,7 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | `NOTIFICATION_URLS`    | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates. See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
 | `ONE_OFF`              | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                     |
 | `DRY_RUN`              | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                   |
+| `DEBUG` | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false. |
 | `TEST_PLAYWRIGHT`      | (Optional, default false) Test Go, Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
 | `BATCH_NOTIFICATIONS`  | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                              |
 | `WEB_USERNAME`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |

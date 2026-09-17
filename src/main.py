@@ -1,5 +1,11 @@
 import threading
 
+import config
+from logger import setup_logging
+
+logger = setup_logging()
+logger.info("Octobot %s starting; DEBUG=%s; log file: logs/octobot.log", config.BOT_VERSION, config.DEBUG)
+
 import web_server
 from bot_orchestrator import BotOrchestrator
 
@@ -10,10 +16,10 @@ web_thread = threading.Thread(
 )
 
 # Start both threads
-print("Starting bot thread...")
+logger.info("Starting bot thread...")
 bot_thread.start()
 
-print("Starting web server thread...")
+logger.info("Starting web server thread...")
 web_thread.start()
 bot_thread.join()
 web_thread.join()

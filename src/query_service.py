@@ -3,6 +3,7 @@ import time
 
 import requests
 
+from diagnostics import error_summary
 from queries import *
 
 logger = logging.getLogger("octobot.query_service")
@@ -44,26 +45,24 @@ class QueryService:
 
             response.raise_for_status()
             result = response.json()
-            logger.debug(
-                f"GQL query response: status={response.status_code} | body={result}"
-            )
+            logger.debug("Token request response: HTTP %s.", response.status_code)
 
             if "errors" in result:
-                raise Exception(f"GQL errors: {result['errors']}")
+                raise Exception("GraphQL token request returned errors")
 
             token = result.get("data", {}).get("obtainKrakenToken", {}).get("token")
 
             if not token:
                 raise Exception("GQL token missing from response")
 
-            logger.info(f"Acquired token: {token[:20]}...")
+            logger.info("Acquired Octopus API token.")
             return token
         except Exception as e:
-            logger.error(f"Failed to get token: {type(e).__name__} - {e}")
+            logger.error("Failed to get token: %s", error_summary(e))
             raise Exception("Failed to get token")
 
     def execute_gql_query(self, query: str):
-        logger.debug(f"Executing GQL query: '{query}'")
+        logger.debug("Executing GraphQL request (query and response bodies omitted).")
         retry = 0
         token_refreshed = False
         while retry < MAX_RETRIES:
@@ -78,9 +77,8 @@ class QueryService:
                     self.graphql_endpoint, headers=headers, json=payload, timeout=60
                 )
 
-                logger.debug(
-                    f"GQL query response: status={response.status_code} | body={response.json()}"
-                )
+                logger.debug("GraphQL response: HTTP %s, attempt %s/%s.",
+                             response.status_code, retry + 1, MAX_RETRIES)
                 if response.ok:
                     result = response.json()
                     if "errors" in result:
@@ -88,6 +86,7 @@ class QueryService:
                             e.get("extensions", {}).get("errorCode")
                             for e in result.get("errors", [])
                         ]
+                        logger.debug("GraphQL error codes: %s", error_codes)
                         if "KT-CT-1111" in error_codes:
                             raise GQLAuthorizationError(
                                 "GQL permission denied (KT-CT-1111)"
@@ -99,8 +98,8 @@ class QueryService:
                                 token_refreshed = True
                                 continue  # Retry with new token
                             except Exception as e:
-                                logger.warning(f"Failed to refresh token: {e}")
-                        raise Exception(f"GQL errors: {result['errors']}")
+                                logger.warning("Failed to refresh token: %s", error_summary(e))
+                        raise Exception(f"GQL error codes: {error_codes}")
 
                     data = result.get("data")
                     if data and isinstance(data, dict) and len(data) > 0:
@@ -116,25 +115,25 @@ class QueryService:
                         continue
 
                     except Exception as e:
-                        logger.warning(f"Failed to refresh token: {e}")
+                        logger.warning("Failed to refresh token: %s", error_summary(e))
 
             except GQLAuthorizationError:
                 raise
             except Exception as e:
                 logger.warning(
-                    f"Request exception on attempt {retry + 1}/{MAX_RETRIES}: {type(e).__name__} - {e}"
+                    f"Request exception on attempt {retry + 1}/{MAX_RETRIES}: {error_summary(e)}"
                 )
                 if retry == MAX_RETRIES - 1:
                     raise Exception(
-                        f"GQL query failed after {MAX_RETRIES} attempts: {e}"
+                        f"GQL query failed after {MAX_RETRIES} attempts: {error_summary(e)}"
                     )
 
             if retry == MAX_RETRIES - 1:
                 logger.warning(
-                    f"GQL query failed after {MAX_RETRIES} attempts: {response.status_code}: {response.text}"
+                    f"GQL query failed after {MAX_RETRIES} attempts: HTTP {response.status_code}"
                 )
                 raise Exception(
-                    f"GQL query failed after {MAX_RETRIES} attempts: {response.status_code}: {response.text}"
+                    f"GQL query failed after {MAX_RETRIES} attempts: HTTP {response.status_code}"
                 )
 
             # Calculate wait time with exponential backoff
@@ -146,16 +145,14 @@ class QueryService:
             time.sleep(wait_time)
 
     def execute_rest_query(self, url: str):
-        logger.info(f"Executing REST query: {url}")
+        logger.debug("Executing REST request.")
         try:
             response = requests.get(url, timeout=60)
-            logger.debug(
-                f"REST query response: status={response.status_code} | body={response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:200]}"
-            )
+            logger.debug("REST response: HTTP %s.", response.status_code)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.exception(f"Request failed for {url}: {type(e).__name__} - {e}")
+            logger.error("REST request failed: %s", error_summary(e))
             raise Exception(
-                f"ERROR: Request failed for {url}: {type(e).__name__} - {e}"
+                f"ERROR: REST request failed: {error_summary(e)}"
             )

@@ -1,5 +1,8 @@
 ---
 configuration:
+  DEBUG:
+    name: Debug Logging
+    description: Enable detailed application diagnostics in file and add-on logs. Disable after troubleshooting to retain important INFO, warning and error messages.
   TEST_PLAYWRIGHT:
     name: Test Playwright
     description: Check Go, Agile and Cosy signup forms once at startup without submitting a switch. Disables comparisons and scheduling until restarted with this option off.

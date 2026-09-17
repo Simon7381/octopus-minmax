@@ -3,6 +3,8 @@ import os
 #  The bot will declare its version in the welcome message.
 # Updated by the release pipeline. Change manually if building from source
 BOT_VERSION = "v.local"
+# Enable verbose application diagnostics in both the file and container logs.
+DEBUG = os.getenv("DEBUG", "false").strip().lower() in ["true", "1", "yes", "on"]
 # Add your stuff here
 API_KEY = os.getenv("API_KEY", "")
 # Your Octopus Energy account number. Starts with A-
