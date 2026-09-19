@@ -1,5 +1,6 @@
 ## v2.0.4 - v2.0.4
 ## What's Changed
+* Stabilize the persistent browser with seed 101 and desktop hardware pins: 24 logical processors, 3840×1600 screen and DPR 1.00. Replace the old 1920×1080 viewport with 1902×1398 for both new and reused pages. Use the supported AMD Radeon GPU identity because the library has no RX 6900 XT profile.
 * Attach `logs/octobot.log` and PNG screenshots to Apprise error notifications when `DEBUG=true`, including startup login failures and batched errors. Skip missing or unreadable files and upload diagnostics once per notification or batch.
 * Apply Ubuntu package updates during every container build, then clean apt metadata.
 * Remove unused GStreamer Bad codecs affected by CVE-2025-3887; the application continues to use Invisible Playwright's Firefox.
@@ -10,6 +11,7 @@
 * Local amd64 Trivy 0.74.0 scan: High findings reduced from 4 to 0; Critical findings remain 0. The final scan still reports 535 Medium and 52 Low findings; none were suppressed.
 * All 66 application tests passed, including Firefox fixtures. Verified that vulnerable codecs and installer copies are absent from the final image.
 * After adding debug error attachments, all 74 tests passed with the updated source mounted into the local Podman image. Attachment tests use synthetic files and mocked delivery; no external notifications were sent.
+* After adding desktop hardware pins, all 75 tests passed in local Podman with the updated source. Real Firefox checks verify viewport, screen, DPR, logical CPU count, AMD renderer, locale and timezone across two persistent launches without contacting Octopus.
 
 **Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.3...v2.0.4
 

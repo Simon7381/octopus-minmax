@@ -19,6 +19,23 @@ from tariff import TARIFFS, Tariff
 
 logger = logging.getLogger("octobot.browser_switch")
 
+# Keep the browser identity stable alongside its persisted cookies. CPU/display
+# values match the Windows desktop used for testing (Ryzen 9 5900X, RX 6900 XT).
+# Invisible Playwright 0.22.2 only accepts validated GPU personas; it has no
+# RX 6900 XT persona, so use its supported modern AMD renderer bucket.
+BROWSER_SEED = 101
+DESKTOP_VIEWPORT = {"width": 1902, "height": 1398}
+DESKTOP_HARDWARE_PINS = {
+    "gpu.vendor": "Google Inc. (AMD)",
+    "gpu.renderer": "ANGLE (AMD, Radeon R9 200 Series Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "hardware.concurrency": 24,
+    "screen.width": 3840,
+    "screen.height": 1600,
+    # Available height is derived from the screen and the Windows taskbar.
+    "screen.taskbar_px": 48,
+    "screen.dpr": 1.0,
+}
+
 
 def log_stage(stage: str) -> str:
     logger.debug("Playwright stage: %s", stage)
@@ -203,24 +220,32 @@ def logged_in_page(account_number: str, email: str, password: str):
     profile_dir = Path("logs") / "browser_profile"
     profile_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Starting headless Invisible Playwright with persistent browser profile.")
-    with InvisiblePlaywright(profile_dir=profile_dir, headless=True) as browser:
+    with InvisiblePlaywright(
+        profile_dir=profile_dir,
+        headless=True,
+        seed=BROWSER_SEED,
+        pin=DESKTOP_HARDWARE_PINS.copy(),
+        locale="en-GB",
+        timezone="Europe/London",
+    ) as browser:
         try:
             is_context = hasattr(browser, "new_page") and not hasattr(browser, "new_context")
             logger.debug("Browser launched; persistent_context=%s.", is_context)
             if is_context:
                 context = browser
             else:
-                context = browser.new_context(
-                    viewport={"width": 1920, "height": 1080},
-                    locale="en-GB",
-                    timezone_id="Europe/London",
-                )
+                # The wrapper derives screen, locale and timezone from the pins
+                # and launch options for both persistent and ordinary contexts.
+                context = browser.new_context()
             try:
                 pages = getattr(context, "pages", None)
                 if isinstance(pages, list) and len(pages) > 0:
                     page = pages[0]
                 else:
                     page = context.new_page()
+                # Viewport is the page's content area, not the physical monitor.
+                # Apply it to reused pages too, before any login navigation.
+                page.set_viewport_size(DESKTOP_VIEWPORT.copy())
                 page.set_default_timeout(60_000)
                 login_and_verify_account(page, account_number, email, password)
                 yield page

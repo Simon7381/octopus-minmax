@@ -2,6 +2,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -18,6 +19,9 @@ from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError
 from playwright.sync_api import Error
 
 from browser_switch import (
+    BROWSER_SEED,
+    DESKTOP_HARDWARE_PINS,
+    DESKTOP_VIEWPORT,
     initiate_browser_switch,
     logged_in_page,
     prewarm_browser_login,
@@ -124,6 +128,48 @@ class SignupControlsTests(unittest.TestCase):
         self.assertIsNone(self.page.evaluate("window.submitted"))
 
 
+class BrowserHardwareTests(unittest.TestCase):
+    def test_persistent_browser_reports_desktop_profile_across_restarts(self):
+        # Use the production launch path, isolated from real cookies and Octopus.
+        with tempfile.TemporaryDirectory() as directory:
+            previous = Path.cwd()
+            os.chdir(directory)
+            try:
+                fingerprints = []
+                with patch("browser_switch.login_and_verify_account"):
+                    for _ in range(2):
+                        with logged_in_page("A-TEST", "test@example.invalid", "test") as page:
+                            fingerprints.append(page.evaluate("""() => {
+                                const gl = document.createElement('canvas').getContext('webgl');
+                                const info = gl.getExtension('WEBGL_debug_renderer_info');
+                                return {
+                                    viewport: [innerWidth, innerHeight],
+                                    screen: [screen.width, screen.height],
+                                    available: [screen.availWidth, screen.availHeight],
+                                    dpr: devicePixelRatio,
+                                    concurrency: navigator.hardwareConcurrency,
+                                    vendor: gl.getParameter(info.UNMASKED_VENDOR_WEBGL),
+                                    renderer: gl.getParameter(info.UNMASKED_RENDERER_WEBGL),
+                                    locale: navigator.language,
+                                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                };
+                            }"""))
+                self.assertEqual(fingerprints[0], fingerprints[1])
+                actual = fingerprints[0]
+                self.assertEqual(actual["viewport"], [1902, 1398])
+                self.assertEqual(actual["screen"], [3840, 1600])
+                self.assertEqual(actual["available"], [3840, 1552])
+                self.assertEqual(actual["dpr"], 1.0)
+                self.assertEqual(actual["concurrency"], 24)
+                self.assertEqual(actual["vendor"], DESKTOP_HARDWARE_PINS["gpu.vendor"])
+                # Firefox sanitizes the ANGLE string before exposing it to pages.
+                self.assertIn("ANGLE (AMD, Radeon R9 200 Series", actual["renderer"])
+                self.assertEqual(actual["locale"], "en-GB")
+                self.assertEqual(actual["timezone"], "Europe/London")
+            finally:
+                os.chdir(previous)
+
+
 class BrowserLifecycleTests(unittest.TestCase):
     def test_prewarm_verifies_account_and_closes_persistent_context(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
@@ -138,7 +184,12 @@ class BrowserLifecycleTests(unittest.TestCase):
             account = prewarm_browser_login("A-12345678", "email", "password")
 
             self.assertEqual(account, "A-12345678")
-            start.assert_called_once_with(profile_dir=Path("logs/browser_profile"), headless=True)
+            start.assert_called_once_with(
+                profile_dir=Path("logs/browser_profile"), headless=True,
+                seed=BROWSER_SEED, pin=DESKTOP_HARDWARE_PINS,
+                locale="en-GB", timezone="Europe/London",
+            )
+            page.set_viewport_size.assert_called_once_with(DESKTOP_VIEWPORT)
             page.content.assert_called_once()
             page.locator.return_value.fill.assert_not_called()
             page.get_by_role.assert_not_called()
@@ -222,6 +273,7 @@ class BrowserLifecycleTests(unittest.TestCase):
                 "A-TEST", "user@example.invalid", "password"
             ) as yielded:
                 self.assertIs(yielded, page)
+            page.set_viewport_size.assert_called_once_with(DESKTOP_VIEWPORT)
             self.assertEqual(
                 page.goto.call_args_list[0].args[0], "https://octopus.energy/dashboard/"
             )

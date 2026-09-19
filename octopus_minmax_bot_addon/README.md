@@ -144,6 +144,17 @@ report login progress and success, showing only the last three account digits.
 Missing credentials skip this step; a failed login is reported and comparisons
 continue. `TEST_PLAYWRIGHT` keeps its separate check-only startup flow.
 
+The shared browser launch in `src/browser_switch.py` uses Invisible Playwright
+hardware pins and seed `101` to keep its identity stable across restarts. The
+profile matches the testing desktop's 24 logical processors, 3840×1600 screen,
+DPR 1.00 and 48-pixel Windows taskbar. The page viewport is 1902×1398, including
+when reusing a persistent page; language and timezone are en-GB and Europe/London.
+Invisible Playwright 0.22.2 has no validated RX 6900 XT GPU profile, so the GPU pin
+uses its supported AMD Radeon R9 200 Series identity. This is an approximation,
+not an exact GPU match or GPU passthrough. These settings apply to startup login,
+`TEST_PLAYWRIGHT` and website switches; adjust the constants in `browser_switch.py`
+if the testing desktop changes. See [Invisible Playwright pinning](https://github.com/feder-cr/invisible_playwright/blob/main/docs/pinning.md).
+
 | Tariff ID | Signup path    | Website action                                                           |
 | --------- | -------------- | ------------------------------------------------------------------------ |
 | `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                |
