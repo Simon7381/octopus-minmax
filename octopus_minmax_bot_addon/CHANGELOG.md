@@ -1,3 +1,6 @@
+## v2.0.4 - v2.0.4
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.3...v2.0.4
+
 ## v2.0.3 - v2.0.3
 ## What's Changed
 * Use the Microsoft Playwright Ubuntu 24.04 (Noble) base image in production, retaining Python 3.14 and Invisible Playwright's Firefox. Browser fonts and system libraries come from the Microsoft image.
