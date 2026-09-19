@@ -108,11 +108,25 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.3`. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.4`. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.3` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.4` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
+
+### Container security
+
+Every build runs `apt-get update` and `apt-get upgrade` against the configured
+Ubuntu repositories before installing the application. The runtime excludes the
+unused GStreamer Bad codec packages and package installers (`pip`, `virtualenv`
+and `ensurepip`); their bundled wheels and caches are removed too. Firefox login
+and the application tests remain supported. The image is not intended as a
+WebKit or general multimedia test environment.
+
+To update dependencies, rebuild the image with `scripts/build_image.py`; installing
+packages inside a running container is intentionally unsupported. Local audit results are saved in `reports/security/v2.0.4/report.md`, with amd64
+scan results, remediation details, scanner/database versions and raw reports.
+The reports directory is excluded from Git and the image build context.
 
 ### Website fallback for tariff switches
 

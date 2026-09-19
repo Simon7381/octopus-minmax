@@ -1,3 +1,16 @@
+## v2.0.4 - v2.0.4
+## What's Changed
+* Apply Ubuntu package updates during every container build, then clean apt metadata.
+* Remove unused GStreamer Bad codecs affected by CVE-2025-3887; the application continues to use Invisible Playwright's Firefox.
+* Remove runtime pip, virtualenv seed wheels, installer caches and ensurepip payloads after dependency installation to eliminate their vulnerable bundled components. Rebuild the image to update dependencies.
+* Retain before-and-after Trivy reports under `reports/security/v2.0.4` and exclude those reports from the image build context.
+
+## Validation
+* Local amd64 Trivy 0.74.0 scan: High findings reduced from 4 to 0; Critical findings remain 0. The final scan still reports 535 Medium and 52 Low findings; none were suppressed.
+* All 66 application tests passed, including Firefox fixtures. Verified that vulnerable codecs and installer copies are absent from the final image.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.3...v2.0.4
+
 ## v2.0.3 - v2.0.3
 ## What's Changed
 * Use the Microsoft Playwright Ubuntu 24.04 (Noble) base image in production, retaining Python 3.14 and Invisible Playwright's Firefox. Browser fonts and system libraries come from the Microsoft image.
