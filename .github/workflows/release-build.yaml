@@ -27,6 +27,12 @@ jobs:
         with:
           ref: refs/tags/${{ env.VERSION }}
 
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          check-latest: true
+
       - name: Validate release version and set Docker image
         shell: bash
         run: |
@@ -40,6 +46,10 @@ jobs:
           fi
           image="${DOCKER_IMAGE,,}"
           echo "DOCKER_IMAGE=$image" >> "$GITHUB_ENV"
+
+      - name: Resolve latest stable Playwright Noble image
+        id: playwright
+        run: python scripts/build_image.py --resolve-only --github-output
 
       - name: Update version in config.py
         run: |
@@ -75,11 +85,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: dockerfile
+          build-args: PLAYWRIGHT_VERSION=${{ steps.playwright.outputs.version }}
+          no-cache: true
+          pull: true
+          load: true
+          platforms: linux/amd64
+          tags: octopus-minmax:test
+
+      - name: Run offline tests before publishing
+        run: docker run --rm octopus-minmax:test python -m unittest discover -s tests -v
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: dockerfile
+          build-args: PLAYWRIGHT_VERSION=${{ steps.playwright.outputs.version }}
+          # Resolve the latest dependencies on every release build.
+          no-cache: true
+          pull: true
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -98,6 +127,12 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          check-latest: true
+
       - name: Update add-on configuration and release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -109,7 +144,6 @@ jobs:
           import shutil
           import subprocess
           from pathlib import Path
-          from urllib.parse import quote
 
           version = os.environ["VERSION"]
           # Read the workflow variable directly: job outputs can be suppressed
@@ -137,8 +171,14 @@ jobs:
           start = current.start() if current else 0
           end = next((h.start() for h in headings if h.start() > start), len(changelog)) if current else 0
           existing_notes = changelog[current.end():end].strip() if current else ""
-          # Preserve hand-written entries, but repair existing empty entries.
-          if not existing_notes:
+          # Old fallback text and link-only entries are not completed release notes.
+          placeholder = re.fullmatch(
+              r"(?:No release notes were provided\.\s*)?"
+              r"\*\*(?:Full Changelog|Release details)\*\*: https://github\.com/\S+",
+              existing_notes,
+          )
+          # Preserve substantive entries, but repair empty entries and placeholders.
+          if not existing_notes or placeholder:
               release = json.loads(subprocess.check_output([
                   "gh", "release", "view", version,
                   "--repo", os.environ["GITHUB_REPOSITORY"],
@@ -147,15 +187,25 @@ jobs:
               title = release["name"] or version
               notes = (release["body"] or "").strip()
               if not notes:
-                  repository_url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
                   previous = next((h["version"] for h in headings if h.start() >= end and h["version"] != version), None)
+                  command = [
+                      "gh", "api", "--method", "POST",
+                      f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/generate-notes",
+                      "-f", f"tag_name={version}",
+                  ]
                   if previous:
-                      link = f"{repository_url}/compare/{quote(previous, safe='')}...{quote(version, safe='')}"
-                      notes = f"No release notes were provided.\n\n**Full Changelog**: {link}"
-                  else:
-                      notes = f"**Release details**: {repository_url}/releases/tag/{quote(version, safe='')}"
+                      command.extend(["-f", f"previous_tag_name={previous}"])
+                  print(f"Release body is empty; generating notes for {version} from {previous or 'automatic previous tag'}.")
+                  generated = json.loads(subprocess.check_output(command, text=True, encoding="utf-8"))
+                  notes = (generated.get("body") or "").strip()
+                  if not notes:
+                      raise SystemExit("GitHub returned empty generated release notes; add a release description and rerun.")
+              else:
+                  print(f"Using published release notes for {version}.")
               entry = f"## {version} - {title}\n{notes}\n\n"
               changelog = changelog[:start] + entry + changelog[end:]
+          else:
+              print(f"Preserving existing release notes for {version}.")
 
           # Resolve and validate all metadata before changing any files.
           (addon / "config.yaml").write_text(content, encoding="utf-8")

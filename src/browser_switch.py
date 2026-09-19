@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from invisible_playwright import InvisiblePlaywright
-# The pinned Invisible Playwright uses its own client and exception hierarchy.
+# Invisible Playwright uses its own client and exception hierarchy.
 from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError
 from playwright.sync_api import Error
 
@@ -141,6 +141,62 @@ def is_login_required(page) -> bool:
         raise
 
 
+def login_and_verify_account(page, account_number: str, email: str, password: str) -> None:
+    """Reuse or establish a website session and verify the configured account."""
+    if not account_number:
+        raise ValueError("Website login requires ACC_NUMBER")
+    step = log_stage("opening dashboard login entry")
+    try:
+        page.goto("https://octopus.energy/dashboard/")
+        page.wait_for_load_state("domcontentloaded")
+        step = log_stage("checking whether login is required")
+        if is_login_required(page):
+            logger.info("Octopus website authentication required; signing in.")
+            step = log_stage("waiting for Octopus authentication page")
+            page.wait_for_url(
+                re.compile(r"^https://auth\.octopus\.energy/login(?:/|\?|$)")
+            )
+            step = log_stage("entering email")
+            page.locator("#id_auth-username").fill(email)
+            step = log_stage("entering password")
+            page.locator("#id_auth-password").fill(password)
+            step = log_stage("submitting login")
+            page.locator("#submit-button").click()
+            step = log_stage("waiting for login redirect")
+            wait_for_login_redirect(page)
+            step = log_stage("opening dashboard")
+            page.goto("https://octopus.energy/dashboard/")
+            page.wait_for_load_state("domcontentloaded")
+        else:
+            logger.info("Reusing existing authenticated session from persistent browser profile.")
+
+        step = log_stage("verifying dashboard account")
+        page.wait_for_url(
+            re.compile(r"^https://octopus\.energy/dashboard(?:/|$)")
+        )
+        if (
+            account_number.lower() not in page.url.lower()
+            and account_number.lower() not in page.content().lower()
+        ):
+            raise RuntimeError(
+                "authenticated dashboard does not contain the configured account"
+            )
+    except (Error, InvisiblePlaywrightError) as exc:
+        # Playwright call logs may contain the filled password.
+        log_failure(logger, f"Octopus website login failed while {step}", exc)
+        save_failure_screenshot(page, "login")
+        raise RuntimeError(
+            f"Octopus website login failed while {step}: {error_summary(exc)}. See logs/octobot.log."
+        ) from None
+    except Exception as exc:
+        log_failure(logger, f"Octopus website login failed while {step}", exc)
+        save_failure_screenshot(page, "login")
+        raise
+    logger.info(
+        "Logged in to Octopus website and verified configured account."
+    )
+
+
 @contextmanager
 def logged_in_page(account_number: str, email: str, password: str):
     """Share the same login and browser lifecycle for checks and real switches, reusing persistent session."""
@@ -166,56 +222,7 @@ def logged_in_page(account_number: str, email: str, password: str):
                 else:
                     page = context.new_page()
                 page.set_default_timeout(60_000)
-                step = log_stage("opening dashboard login entry")
-                try:
-                    page.goto("https://octopus.energy/dashboard/")
-                    page.wait_for_load_state("domcontentloaded")
-                    step = log_stage("checking whether login is required")
-                    if is_login_required(page):
-                        logger.info("Octopus website authentication required; signing in.")
-                        step = log_stage("waiting for Octopus authentication page")
-                        page.wait_for_url(
-                            re.compile(r"^https://auth\.octopus\.energy/login(?:/|\?|$)")
-                        )
-                        step = log_stage("entering email")
-                        page.locator("#id_auth-username").fill(email)
-                        step = log_stage("entering password")
-                        page.locator("#id_auth-password").fill(password)
-                        step = log_stage("submitting login")
-                        page.locator("#submit-button").click()
-                        step = log_stage("waiting for login redirect")
-                        wait_for_login_redirect(page)
-                        step = log_stage("opening dashboard")
-                        page.goto("https://octopus.energy/dashboard/")
-                        page.wait_for_load_state("domcontentloaded")
-                    else:
-                        logger.info("Reusing existing authenticated session from persistent browser profile.")
-
-                    step = log_stage("verifying dashboard account")
-                    page.wait_for_url(
-                        re.compile(r"^https://octopus\.energy/dashboard(?:/|$)")
-                    )
-                    if (
-                        account_number.lower() not in page.url.lower()
-                        and account_number.lower() not in page.content().lower()
-                    ):
-                        raise RuntimeError(
-                            "authenticated dashboard does not contain the configured account"
-                        )
-                except (Error, InvisiblePlaywrightError) as exc:
-                    # Playwright call logs may contain the filled password.
-                    log_failure(logger, f"Octopus website login failed while {step}", exc)
-                    save_failure_screenshot(page, "login")
-                    raise RuntimeError(
-                        f"Octopus website login failed while {step}: {error_summary(exc)}. See logs/octobot.log."
-                    ) from None
-                except Exception as exc:
-                    log_failure(logger, f"Octopus website login failed while {step}", exc)
-                    save_failure_screenshot(page, "login")
-                    raise
-                logger.info(
-                    "Logged in to Octopus website and verified configured account."
-                )
+                login_and_verify_account(page, account_number, email, password)
                 yield page
             finally:
                 logger.debug("Closing website browser context.")
@@ -224,6 +231,17 @@ def logged_in_page(account_number: str, email: str, password: str):
         finally:
             logger.debug("Closing Invisible Playwright browser.")
             browser.close()
+
+
+def prewarm_browser_login(account_number: str, email: str, password: str) -> str:
+    """Verify login and close the browser to persist its session before returning."""
+    if not account_number or not email or not password:
+        raise RuntimeError(
+            "Browser login requires ACC_NUMBER, OCTOPUS_LOGIN_EMAIL and OCTOPUS_LOGIN_PASSWD"
+        )
+    with logged_in_page(account_number, email, password):
+        pass
+    return account_number
 
 
 def open_signup(page, tariff: Tariff, account_number: str) -> None:

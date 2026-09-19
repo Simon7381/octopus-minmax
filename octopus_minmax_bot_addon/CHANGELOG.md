@@ -1,5 +1,25 @@
+## v2.0.3 - v2.0.3
+## What's Changed
+* Use the Microsoft Playwright Ubuntu 24.04 (Noble) base image in production, retaining Python 3.14 and Invisible Playwright's Firefox. Browser fonts and system libraries come from the Microsoft image.
+* Resolve the newest stable Noble image on every release or helper-driven local build. Match the standard Playwright package to its bundled browsers, refresh other dependencies, and pull current Python 3.14 patch images.
+* Run the offline test suite before publishing Docker Hub images for amd64 and arm64. Add a shared local build helper and coverage for stable Noble tag selection.
+* Extract shared website login and account verification, and warm the persistent browser session after the startup mode and dashboard notification.
+* Send immediate login progress and completion notifications, masking the account number except for its last three characters. Missing credentials skip login; login failures are reported while comparisons continue.
+* Generate release notes when a published release has no description, while preserving substantive existing changelog entries.
+
+## Validation
+* The final production image passed all 66 offline tests on amd64 with Python 3.14.7, Invisible Playwright 0.22.2 and Playwright 1.63.0. Startup verified the saved account, logged its masked confirmation and served the authenticated dashboard with HTTP 200.
+* The Microsoft-based image passed fresh Octopus login, account verification and cookie reuse in a new container during local Podman testing. No tariff changes or external notifications were sent.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.2...v2.0.3
+
 ## v2.0.2 - v2.0.2
-No release notes were provided.
+## What's Changed
+* Initialise application logging at startup and add a `DEBUG` option to Home Assistant, Docker configuration and the web dashboard. Important events remain visible at INFO when debug logging is disabled.
+* Add browser stage diagnostics, API status codes, enrolment polling attempts and exception stack locations while omitting raw API bodies, token values and credential-bearing Playwright call logs.
+* Catch Invisible Playwright's own exception class so browser failures report the failed stage and operation, attempt a failure screenshot and warn when a submitted switch needs checking before retrying.
+* Log notification contents immediately, including when notifications are batched, and add regression tests for logging and browser error handling.
+* Improve release automation validation and preserve existing changelog notes when updating add-on metadata.
 
 **Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.1...v2.0.2
 

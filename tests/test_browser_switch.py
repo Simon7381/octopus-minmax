@@ -20,6 +20,7 @@ from playwright.sync_api import Error
 from browser_switch import (
     initiate_browser_switch,
     logged_in_page,
+    prewarm_browser_login,
     prepare_signup,
     run_playwright_checks,
     wait_for_login_redirect,
@@ -124,6 +125,32 @@ class SignupControlsTests(unittest.TestCase):
 
 
 class BrowserLifecycleTests(unittest.TestCase):
+    def test_prewarm_verifies_account_and_closes_persistent_context(self):
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            context = Mock(spec=["new_page", "pages", "close"])
+            page = Mock()
+            context.pages = [page]
+            start.return_value.__enter__.return_value = context
+            page.url = "https://octopus.energy/dashboard/"
+            page.content.return_value = "Account A-12345678"
+            page.locator.return_value.count.return_value = 0
+
+            account = prewarm_browser_login("A-12345678", "email", "password")
+
+            self.assertEqual(account, "A-12345678")
+            start.assert_called_once_with(profile_dir=Path("logs/browser_profile"), headless=True)
+            page.content.assert_called_once()
+            page.locator.return_value.fill.assert_not_called()
+            page.get_by_role.assert_not_called()
+            context.close.assert_called_once()
+
+    def test_prewarm_rejects_missing_credentials_before_launch(self):
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            for args in [("", "email", "password"), ("A-TEST", "", "password"), ("A-TEST", "email", "")]:
+                with self.subTest(args=args), self.assertRaisesRegex(RuntimeError, "Browser login requires"):
+                    prewarm_browser_login(*args)
+            start.assert_not_called()
+
     def test_login_inspection_error_is_not_treated_as_authenticated(self):
         with patch("browser_switch.InvisiblePlaywright") as start, \
                 patch("browser_switch.save_failure_screenshot") as screenshot, \

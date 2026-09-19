@@ -6,7 +6,7 @@ from datetime import datetime
 import config
 from account_info import AccountInfo
 from account_manager import AccountManager
-from browser_switch import run_playwright_checks
+from browser_switch import prewarm_browser_login, run_playwright_checks
 from comparison_engine import ComparisonEngine, ComparisonResult
 from diagnostics import log_failure
 from notification_service import NotificationService
@@ -63,8 +63,10 @@ class BotOrchestrator:
             else f"Scheduled mode, running at {config.EXECUTION_TIME}"
         )
         ns.send_notification(
-            f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - {mode_msg} \n Check port {config.WEB_PORT} for dashboard."
+            f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - {mode_msg} \n Check port {config.WEB_PORT} for dashboard.",
+            batchable=False,
         )
+        self._prewarm_browser_login()
 
         while True:
             if config.ONE_OFF_RUN and not config.ONE_OFF_EXECUTED:
@@ -92,6 +94,35 @@ class BotOrchestrator:
                     self._run_tariff_compare()
 
             time.sleep(30)
+
+    def _prewarm_browser_login(self) -> None:
+        ns = self.notification_service
+        if not all((config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD)):
+            ns.send_notification(
+                "Browser login skipped: configure ACC_NUMBER, OCTOPUS_LOGIN_EMAIL and OCTOPUS_LOGIN_PASSWD.",
+                batchable=False,
+            )
+            return
+
+        ns.send_notification("Browser login in progress; preparing the persistent session.", batchable=False)
+        try:
+            account_number = prewarm_browser_login(
+                config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD
+            )
+        except Exception as exc:
+            log_failure(logger, "Startup browser login failed", exc)
+            ns.send_notification(
+                "Browser login failed. See logs/octobot.log. Comparisons will continue; website login will be retried if needed for a switch.",
+                is_error=True,
+                batchable=False,
+            )
+            return
+
+        masked_account = "*" * max(0, len(account_number) - 3) + account_number[-3:]
+        ns.send_notification(
+            f"Browser login complete. Verified account {masked_account}; browser session saved for reuse.",
+            batchable=False,
+        )
 
     def _initialize(self) -> None:
         logger.debug(f"{__name__}")

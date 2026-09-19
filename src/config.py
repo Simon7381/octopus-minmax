@@ -9,7 +9,7 @@ DEBUG = os.getenv("DEBUG", "false").strip().lower() in ["true", "1", "yes", "on"
 API_KEY = os.getenv("API_KEY", "")
 # Your Octopus Energy account number. Starts with A-
 ACC_NUMBER = os.getenv("ACC_NUMBER", "")
-# Website credentials, used only when API tariff initiation fails.
+# Website credentials, used to warm the startup session and for API fallback.
 OCTOPUS_LOGIN_EMAIL = os.getenv("OCTOPUS_LOGIN_EMAIL", "")
 OCTOPUS_LOGIN_PASSWD = os.getenv("OCTOPUS_LOGIN_PASSWD", "")
 BASE_URL = os.getenv("BASE_URL", "https://api.octopus.energy/v1")
