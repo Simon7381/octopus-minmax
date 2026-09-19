@@ -4,6 +4,7 @@
 .env.*
 *.env
 logs
+reports/security
 **/__pycache__
 .playwright-browsers
 *.code-workspace
