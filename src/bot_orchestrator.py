@@ -234,14 +234,14 @@ class BotOrchestrator:
         ns = self.notification_service
 
         if not target_tariff.product_code:
-            ns.send_notification("ERROR: product_code is missing.")
+            ns.send_notification("ERROR: product_code is missing.", is_error=True)
             return
 
         enrolment_id = self.account_manager.initiate_tariff_switch(
             target_tariff.product_code
         )
         if not enrolment_id:
-            ns.send_notification("ERROR: Couldn't get enrolment ID")
+            ns.send_notification("ERROR: Couldn't get enrolment ID", is_error=True)
             return
 
         wait_time = 120
@@ -280,5 +280,6 @@ class BotOrchestrator:
                 ns.send_notification(
                     f"Unable to verify new agreement after retry. "
                     f"Please check your account and emails.\n"
-                    f"https://octopus.energy/dashboard/"
+                    f"https://octopus.energy/dashboard/",
+                    is_error=True,
                 )

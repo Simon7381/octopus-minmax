@@ -181,6 +181,12 @@ For Docker/Compose, set `DEBUG=true` and recreate the container. You can also to
 After troubleshooting, set it back to `false`; startup, comparison results, fallback
 selection, signup readiness, submission, enrolment verification, warnings and errors
 remain visible at INFO or above. Debug logging does not send extra Discord messages.
+When `DEBUG=true`, error notifications (including startup login failures) attach
+`logs/octobot.log` and all PNG screenshots directly inside `logs` using Apprise.
+Error batches include these files once when sent; ordinary notifications and errors
+with debug disabled stay text-only. Missing or unreadable files are skipped.
+Attachment delivery depends on the configured notification service's support and
+file-size limits; see [Apprise attachments](https://appriseit.com/library/attachments/).
 
 Both the container/add-on console and `logs/octobot.log` use the selected level.
 DEBUG adds browser stages, HTTP status/error codes, enrolment polling attempts and
