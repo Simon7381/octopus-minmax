@@ -10,13 +10,14 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlencode
+from uuid import uuid4
 
 from invisible_playwright import InvisiblePlaywright
 # Invisible Playwright uses its own client and exception hierarchy.
-from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError
+from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError, expect
 from playwright.sync_api import Error
 
-from diagnostics import error_summary, log_failure
+from diagnostics import error_summary, is_navigation_context_error, log_failure
 from tariff import TARIFFS, Tariff
 
 logger = logging.getLogger("octobot.browser_switch")
@@ -37,6 +38,11 @@ DESKTOP_HARDWARE_PINS = {
     "screen.taskbar_px": 48,
     "screen.dpr": 1.0,
 }
+LOGIN_FIELD_TIMEOUT_MS = 120_000
+CREDENTIAL_MASK_SELECTOR = (
+    'input[type="password"], input[type="email"], '
+    '#id_auth-username, #id_auth-password, input[autocomplete="username"]'
+)
 
 
 def log_stage(stage: str) -> str:
@@ -59,31 +65,42 @@ SIGNUP_FLOWS = {
 
 
 def save_stage_screenshot(page, name: str) -> None:
-    try:
-        screenshot = Path("logs") / f"playwright-{name}-stage.png"
-        screenshot.parent.mkdir(parents=True, exist_ok=True)
-        page.screenshot(
-            path=str(screenshot),
-            full_page=True,
-            mask=[page.locator('input[type="password"], input[type="email"]')],
-        )
-        logger.info("Playwright stage screenshot saved to %s", screenshot)
-    except Exception as exc:
-        logger.warning("Could not capture Playwright stage screenshot: %s", error_summary(exc))
+    _save_diagnostic_screenshot(page, name, "stage")
 
 
 def save_failure_screenshot(page, name: str) -> None:
+    _save_diagnostic_screenshot(page, name, "failure")
+
+
+def _save_diagnostic_screenshot(page, name: str, kind: str) -> None:
     try:
-        screenshot = Path("logs") / f"playwright-{name}-failure.png"
+        screenshot = Path("logs") / f"playwright-{name}-{kind}.png"
         screenshot.parent.mkdir(parents=True, exist_ok=True)
-        page.screenshot(
-            path=str(screenshot),
-            full_page=True,
-            mask=[page.locator('input[type="password"], input[type="email"]')],
+        # Invisible Playwright 0.23.0 ignores screenshot(mask=...). Hide the
+        # controls in the document as well, without changing their values.
+        redaction_id = f"octobot-redaction-{uuid4().hex}"
+        page.evaluate(
+            """mask => {
+                const style = document.createElement('style');
+                style.id = mask.id;
+                style.textContent = mask.css;
+                document.documentElement.appendChild(style);
+            }""",
+            {"id": redaction_id, "css": f"{CREDENTIAL_MASK_SELECTOR} {{ visibility: hidden !important; }}"},
         )
-        logger.info("Playwright failure screenshot saved to %s", screenshot)
+        try:
+            capture = page.screenshot(
+                full_page=True,
+                mask=[page.locator(CREDENTIAL_MASK_SELECTOR)],
+            )
+            if not page.evaluate("id => Boolean(document.getElementById(id))", redaction_id):
+                raise RuntimeError("Page changed during redacted capture; screenshot discarded")
+            screenshot.write_bytes(capture)
+        finally:
+            page.evaluate("id => document.getElementById(id)?.remove()", redaction_id)
+        logger.info("Playwright %s screenshot saved to %s", kind, screenshot)
     except Exception as exc:
-        logger.warning("Could not capture Playwright failure screenshot: %s", error_summary(exc))
+        logger.warning("Could not capture Playwright %s screenshot: %s", kind, error_summary(exc))
 
 
 def wait_for_login_redirect(page, timeout_seconds: int = 60) -> None:
@@ -95,7 +112,16 @@ def wait_for_login_redirect(page, timeout_seconds: int = 60) -> None:
         if re.match(r"^https://octopus\.energy(?:/|$)", page.url):
             logger.debug("Login redirected to octopus.energy.")
             return
-        if any(challenge.nth(index).is_visible() for index in range(challenge.count())):
+        try:
+            challenge_visible = any(challenge.nth(index).is_visible() for index in range(challenge.count()))
+        except (Error, InvisiblePlaywrightError) as exc:
+            if not is_navigation_context_error(exc):
+                raise
+            # Authentication can replace the document between reading the URL
+            # and inspecting challenge frames. Keep polling; never resubmit.
+            logger.debug("Login page navigated during challenge check; waiting for the new document.")
+            challenge_visible = False
+        if challenge_visible:
             raise RuntimeError(
                 "Octopus login requires an interactive hCaptcha; headless Playwright cannot continue"
             )
@@ -160,6 +186,31 @@ def is_login_required(page) -> bool:
         raise
 
 
+def fill_login_field(page, selector: str, value: str, label: str) -> None:
+    """Replace a credential in one input operation and check it without logging it."""
+    for attempt in range(2):
+        field = page.locator(selector)
+        try:
+            field.wait_for(state="visible", timeout=LOGIN_FIELD_TIMEOUT_MS)
+            expect(field).to_be_editable(timeout=LOGIN_FIELD_TIMEOUT_MS)
+            # Invisible Playwright's fill() types character by character. Select
+            # the entire existing value and insert once, including on a retry.
+            field.press("ControlOrMeta+A", timeout=LOGIN_FIELD_TIMEOUT_MS)
+            page.keyboard.insert_text(value)
+            if field.input_value(timeout=LOGIN_FIELD_TIMEOUT_MS) != value:
+                raise RuntimeError(f"{label} entry was incomplete; login was not submitted")
+            logger.debug("%s entry verified.", label)
+            return
+        except AssertionError:
+            # Locator assertions can include DOM snippets; keep credentials out
+            # of callers that display the exception message (e.g. test mode).
+            raise RuntimeError(f"{label} field did not become editable; login was not submitted") from None
+        except (Error, InvisiblePlaywrightError, RuntimeError) as exc:
+            if attempt == 1 or page.is_closed():
+                raise
+            logger.warning("Retrying %s entry before login submission: %s", label, error_summary(exc))
+
+
 def login_and_verify_account(page, account_number: str, email: str, password: str) -> None:
     """Reuse or establish a website session and verify the configured account."""
     if not account_number:
@@ -176,16 +227,24 @@ def login_and_verify_account(page, account_number: str, email: str, password: st
                 re.compile(r"^https://auth\.octopus\.energy/login(?:/|\?|$)")
             )
             step = log_stage("entering email")
-            page.locator("#id_auth-username").fill(email)
+            fill_login_field(page, "#id_auth-username", email, "Email")
             step = log_stage("entering password")
-            page.locator("#id_auth-password").fill(password)
+            fill_login_field(page, "#id_auth-password", password, "Password")
+            step = log_stage("verifying login fields before submission")
+            if (
+                page.locator("#id_auth-username").input_value(timeout=LOGIN_FIELD_TIMEOUT_MS) != email
+                or page.locator("#id_auth-password").input_value(timeout=LOGIN_FIELD_TIMEOUT_MS) != password
+            ):
+                raise RuntimeError("Login fields changed before submission; login was not submitted")
             step = log_stage("submitting login")
             page.locator("#submit-button").click()
             step = log_stage("waiting for login redirect")
             wait_for_login_redirect(page)
             step = log_stage("opening dashboard")
-            page.goto("https://octopus.energy/dashboard/")
             page.wait_for_load_state("domcontentloaded")
+            if not re.match(r"^https://octopus\.energy/dashboard(?:/|$)", page.url):
+                page.goto("https://octopus.energy/dashboard/")
+                page.wait_for_load_state("domcontentloaded")
         else:
             logger.info("Reusing existing authenticated session from persistent browser profile.")
 
@@ -197,9 +256,18 @@ def login_and_verify_account(page, account_number: str, email: str, password: st
             account_number.lower() not in page.url.lower()
             and account_number.lower() not in page.content().lower()
         ):
-            raise RuntimeError(
-                "authenticated dashboard does not contain the configured account"
+            step = log_stage("waiting for dashboard account details")
+            # The dashboard shell can load before its account data on slow hosts.
+            page.wait_for_function(
+                """account => location.href.toLowerCase().includes(account.toLowerCase())
+                    || document.documentElement.innerHTML.toLowerCase().includes(account.toLowerCase())""",
+                arg=account_number, timeout=LOGIN_FIELD_TIMEOUT_MS,
             )
+            if (
+                account_number.lower() not in page.url.lower()
+                and account_number.lower() not in page.content().lower()
+            ):
+                raise RuntimeError("authenticated dashboard does not contain the configured account")
     except (Error, InvisiblePlaywrightError) as exc:
         # Playwright call logs may contain the filled password.
         log_failure(logger, f"Octopus website login failed while {step}", exc)
@@ -267,8 +335,9 @@ def logged_in_page(account_number: str, email: str, password: str):
                 if not is_context:
                     context.close()
         finally:
-            logger.debug("Closing Invisible Playwright browser.")
-            browser.close()
+            # The InvisiblePlaywright context manager owns its persistent
+            # context/browser and closes it on exit. Do not close it twice.
+            logger.debug("Closing Invisible Playwright session through its context manager.")
 
 
 def prewarm_browser_login(account_number: str, email: str, password: str) -> str:

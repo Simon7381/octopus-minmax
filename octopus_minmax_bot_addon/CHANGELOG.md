@@ -1,3 +1,18 @@
+## v2.0.5 - v2.0.5
+## What's Changed
+* Replace character-by-character credential filling with whole-value input after waiting for visible, editable fields. Verify each field and recheck both before clicking Log in; allow one replacement attempt if entry fails before submission.
+* Continue the bounded login-redirect check when navigation replaces its document during challenge inspection. Closed-browser failures still propagate and interactive challenges still stop the login check.
+* Wait for asynchronously loaded dashboard account data and avoid reloading a dashboard reached by the successful login redirect.
+* Let Invisible Playwright's context manager close its persistent session once, removing the application's duplicate close call.
+* Allow up to 120 seconds for login-field readiness on slower hosts, without adding fixed sleeps or retrying login submissions.
+* Hide Octopus's credential controls during diagnostic screenshots, including text-type usernames and revealed passwords. This compensates for Invisible Playwright 0.23.0 ignoring screenshot masks; controls are restored afterward and captures are discarded if the document changes during capture.
+
+## Validation
+* All 86 tests passed in local Podman limited to half a CPU, 768 MiB RAM and 64 MiB shared memory. Coverage includes delayed inputs, partial-value replacement, navigation during redirect checks, delayed account data, and screenshot redaction/restoration.
+* A fresh real Octopus login passed under the same limits, including credential verification, account verification and clean browser closure. No tariff changes or external notifications were sent. The exact HA keystroke failure remains unconfirmed, but its failing character-by-character entry path has been replaced.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.4...v2.0.5
+
 ## v2.0.4 - v2.0.4
 ## What's Changed
 * Improve startup browser diagnostics before login: record runtime versions and page-creation/viewport stages, and retain safe timeout and closed-browser details without logging credential-bearing exception bodies.

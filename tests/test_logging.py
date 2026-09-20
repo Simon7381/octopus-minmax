@@ -98,6 +98,8 @@ class LoggingTests(unittest.TestCase):
 
     def test_browser_errors_keep_safe_operation_and_failure_details(self):
         cases = [
+            ("Locator.fill: Page.dispatchKeyEvent: no response in 10s. password=secret-value",
+             "RuntimeError in Locator.fill (browser protocol Page.dispatchKeyEvent did not respond within 10 s)"),
             ("BrowserContext.new_page: Timeout 30000ms exceeded. password=secret-value",
              "RuntimeError in BrowserContext.new_page (timed out after 30000 ms)"),
             ("BrowserContext.new_page: Target page, context or browser has been closed; token=secret-value",

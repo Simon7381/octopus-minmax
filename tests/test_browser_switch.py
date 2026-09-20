@@ -22,11 +22,15 @@ from browser_switch import (
     BROWSER_SEED,
     DESKTOP_HARDWARE_PINS,
     DESKTOP_VIEWPORT,
+    CREDENTIAL_MASK_SELECTOR,
+    fill_login_field,
+    login_and_verify_account,
     initiate_browser_switch,
     logged_in_page,
     prewarm_browser_login,
     prepare_signup,
     run_playwright_checks,
+    save_failure_screenshot,
     wait_for_login_redirect,
 )
 from tariff import Tariff
@@ -57,6 +61,69 @@ class SignupControlsTests(unittest.TestCase):
         self.page.set_content(
             html + '<button onclick="window.submitted = true">Switch Tariff</button>'
         )
+
+    def test_login_entry_waits_for_editable_fields_and_replaces_partial_values(self):
+        self.page.set_content('''
+            <input id="id_auth-username" type="text" value="partial" disabled>
+            <input id="id_auth-password" type="password" value="old" disabled>
+            <script>
+              window.inputValues = [];
+              document.addEventListener('input', event => window.inputValues.push(event.target.value));
+              setTimeout(() => document.querySelectorAll('input').forEach(
+                input => input.disabled = false), 500);
+            </script>
+        ''')
+        email = "test+login@example.invalid"
+        password = "Synthetic-only-£-long-password"
+        fill_login_field(self.page, "#id_auth-username", email, "Email")
+        fill_login_field(self.page, "#id_auth-password", password, "Password")
+        self.assertEqual(self.page.locator("#id_auth-username").input_value(), email)
+        self.assertEqual(self.page.locator("#id_auth-password").input_value(), password)
+        self.assertEqual(set(self.page.evaluate("window.inputValues")), {email, password})
+        # Include text-type usernames and a password revealed by the eye button.
+        self.page.locator("#id_auth-password").evaluate("el => el.type = 'text'")
+        self.assertEqual(self.page.locator(CREDENTIAL_MASK_SELECTOR).count(), 2)
+
+    def test_login_entry_replaces_value_after_one_partial_input(self):
+        self.page.set_content('''
+            <input id="id_auth-username" type="text">
+            <script>
+              window.inputs = 0;
+              document.querySelector('input').addEventListener('input', event => {
+                if (++window.inputs === 1) event.target.value = 'partial';
+              });
+            </script>
+        ''')
+        fill_login_field(self.page, "#id_auth-username", "test@example.invalid", "Email")
+        self.assertEqual(self.page.locator("#id_auth-username").input_value(), "test@example.invalid")
+        self.assertGreaterEqual(self.page.evaluate("window.inputs"), 2)
+
+    def test_login_entry_stops_after_two_incomplete_inputs_without_leaking_value(self):
+        self.page.set_content('''
+            <input id="id_auth-username" oninput="this.value = 'partial'">
+        ''')
+        with self.assertRaisesRegex(RuntimeError, "Email entry was incomplete") as raised:
+            fill_login_field(self.page, "#id_auth-username", "private@example.invalid", "Email")
+        self.assertNotIn("private@example.invalid", str(raised.exception))
+
+    def test_screenshot_hides_credentials_and_restores_fields_even_on_failure(self):
+        self.page.set_content('<input id="id_auth-username" value="synthetic@example.invalid">')
+        field = self.page.locator("#id_auth-username")
+        original_screenshot = self.page.screenshot
+        for fails in (False, True):
+            with self.subTest(fails=fails), tempfile.TemporaryDirectory() as directory:
+                def capture(**kwargs):
+                    self.assertFalse(field.is_visible())
+                    if fails:
+                        raise InvisiblePlaywrightError("Synthetic screenshot failure")
+                    return original_screenshot(**kwargs)
+
+                with patch("browser_switch.Path", return_value=Path(directory)), \
+                        patch.object(self.page, "screenshot", side_effect=capture):
+                    save_failure_screenshot(self.page, "test")
+                self.assertTrue(field.is_visible())
+                self.assertEqual(field.input_value(), "synthetic@example.invalid")
+                self.assertEqual((Path(directory) / "playwright-test-failure.png").exists(), not fails)
 
     def test_go_checks_displayed_terms_without_selecting_a_variant(self):
         self.load(
@@ -171,6 +238,15 @@ class BrowserHardwareTests(unittest.TestCase):
 
 
 class BrowserLifecycleTests(unittest.TestCase):
+    def test_field_readiness_failure_does_not_expose_assertion_contents(self):
+        page = Mock()
+        with patch("browser_switch.expect") as editable:
+            editable.return_value.to_be_editable.side_effect = AssertionError("DOM contains private@example.invalid")
+            with self.assertRaisesRegex(RuntimeError, "Email field did not become editable") as raised:
+                fill_login_field(page, "#id_auth-username", "private@example.invalid", "Email")
+        self.assertNotIn("private@example.invalid", str(raised.exception))
+        page.keyboard.insert_text.assert_not_called()
+
     def test_page_creation_failure_logs_stage_and_closes_browser(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
             context = Mock(spec=["new_page", "pages", "close"])
@@ -188,7 +264,8 @@ class BrowserLifecycleTests(unittest.TestCase):
             self.assertIn("BrowserContext.new_page (timed out after 30000 ms)", output)
             self.assertIn("Browser runtime: invisible-playwright=", output)
             self.assertNotIn("secret-value", output)
-            context.close.assert_called_once()
+            context.close.assert_not_called()
+            start.return_value.__exit__.assert_called_once()
 
     def test_prewarm_verifies_account_and_closes_persistent_context(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
@@ -212,7 +289,8 @@ class BrowserLifecycleTests(unittest.TestCase):
             page.content.assert_called_once()
             page.locator.return_value.fill.assert_not_called()
             page.get_by_role.assert_not_called()
-            context.close.assert_called_once()
+            context.close.assert_not_called()
+            start.return_value.__exit__.assert_called_once()
 
     def test_prewarm_rejects_missing_credentials_before_launch(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
@@ -275,8 +353,28 @@ class BrowserLifecycleTests(unittest.TestCase):
             wait_for_login_redirect(page)
         page.wait_for_timeout.assert_not_called()
 
+    def test_login_redirect_tolerates_document_replacement_during_challenge_check(self):
+        page = Mock()
+        page.url = "https://auth.octopus.energy/login/"
+        page.locator.return_value.count.side_effect = InvisiblePlaywrightError(
+            "Locator.count: Failed to find execution context with id = old-document"
+        )
+        page.wait_for_timeout.side_effect = lambda _: setattr(page, "url", "https://octopus.energy/dashboard/")
+        wait_for_login_redirect(page)
+        page.wait_for_timeout.assert_called_once_with(250)
+        page.locator.return_value.click.assert_not_called()
+
+    def test_login_redirect_does_not_swallow_closed_browser_errors(self):
+        page = Mock()
+        page.url = "https://auth.octopus.energy/login/"
+        page.locator.return_value.count.side_effect = InvisiblePlaywrightError("Browser has been closed")
+        with self.assertRaises(InvisiblePlaywrightError):
+            wait_for_login_redirect(page)
+        page.wait_for_timeout.assert_not_called()
+
     def test_login_uses_auth_url_and_verifies_dashboard_account(self):
-        with patch("browser_switch.InvisiblePlaywright") as start:
+        with patch("browser_switch.InvisiblePlaywright") as start, \
+                patch("browser_switch.fill_login_field") as fill_field:
             browser = start.return_value.__enter__.return_value
             context = browser.new_context.return_value
             page = context.new_page.return_value
@@ -288,6 +386,7 @@ class BrowserLifecycleTests(unittest.TestCase):
 
             page.locator.return_value.click.side_effect = handle_click
             page.locator.return_value.count.return_value = 0
+            page.locator.return_value.input_value.side_effect = ["user@example.invalid", "password"]
             with logged_in_page(
                 "A-TEST", "user@example.invalid", "password"
             ) as yielded:
@@ -296,9 +395,8 @@ class BrowserLifecycleTests(unittest.TestCase):
             self.assertEqual(
                 page.goto.call_args_list[0].args[0], "https://octopus.energy/dashboard/"
             )
-            self.assertEqual(
-                page.goto.call_args_list[1].args[0], "https://octopus.energy/dashboard/"
-            )
+            # Let the successful redirect finish without reloading the dashboard.
+            page.goto.assert_called_once_with("https://octopus.energy/dashboard/")
             self.assertTrue(
                 any(
                     call.args
@@ -311,6 +409,27 @@ class BrowserLifecycleTests(unittest.TestCase):
             page.locator.assert_any_call("#id_auth-username")
             page.locator.assert_any_call("#id_auth-password")
             page.locator.assert_any_call("#submit-button")
+            self.assertEqual(fill_field.call_count, 2)
+
+    def test_changed_login_field_prevents_submission(self):
+        page = Mock()
+        page.url = "https://auth.octopus.energy/login/"
+        page.locator.return_value.input_value.return_value = "partial"
+        with patch("browser_switch.fill_login_field"), \
+                patch("browser_switch.save_failure_screenshot"), \
+                self.assertRaisesRegex(RuntimeError, "Login fields changed before submission"):
+            login_and_verify_account(page, "A-TEST", "email", "password")
+        page.locator.return_value.click.assert_not_called()
+
+    def test_account_verification_waits_for_dashboard_data(self):
+        page = Mock()
+        page.url = "https://octopus.energy/dashboard/"
+        page.locator.return_value.count.return_value = 0
+        page.content.side_effect = ["Loading dashboard", "Account A-TEST"]
+        login_and_verify_account(page, "A-TEST", "email", "password")
+        page.wait_for_function.assert_called_once()
+        self.assertEqual(page.wait_for_function.call_args.kwargs["arg"], "A-TEST")
+        page.locator.return_value.click.assert_not_called()
 
     def test_login_reuses_existing_authenticated_session(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
@@ -417,7 +536,8 @@ class BrowserLifecycleTests(unittest.TestCase):
                     f"https://octopus.energy/smart/{slug}/sign-up/?accountNumber=A-TEST",
                 )
                 context.close.assert_called_once()
-                browser.close.assert_called_once()
+                browser.close.assert_not_called()
+                start.return_value.__exit__.assert_called_once()
 
 
 if __name__ == "__main__":

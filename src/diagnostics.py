@@ -4,6 +4,13 @@ import re
 import traceback
 
 
+def is_navigation_context_error(exc: Exception) -> bool:
+    return any(marker in str(exc).lower() for marker in (
+        "failed to find execution context", "execution context was destroyed",
+        "cannot find context with specified id",
+    ))
+
+
 def error_summary(exc: Exception) -> str:
     summary = type(exc).__name__
     message = str(exc)
@@ -12,10 +19,7 @@ def error_summary(exc: Exception) -> str:
     operation = re.match(r"^([A-Za-z_][A-Za-z_0-9]*\.[A-Za-z_][A-Za-z_0-9]*):", message)
     if operation:
         summary += f" in {operation[1]}"
-    if any(marker in message.lower() for marker in (
-        "failed to find execution context", "execution context was destroyed",
-        "cannot find context with specified id",
-    )):
+    if is_navigation_context_error(exc):
         summary += " (browser execution context unavailable; page may be navigating)"
     timeout = re.search(r"\btimeout\s+(\d{1,9})\s*ms\s+exceeded\b", message, re.IGNORECASE)
     if timeout:
@@ -29,6 +33,13 @@ def error_summary(exc: Exception) -> str:
         summary += " (browser or page closed/crashed)"
     if "failed to create new page" in message.lower():
         summary += " (browser could not create a page)"
+    protocol_timeout = re.search(
+        r"\b([A-Za-z]+\.[A-Za-z_]+): no response in (\d{1,6})s\b", message
+    )
+    if protocol_timeout:
+        summary += f" (browser protocol {protocol_timeout[1]} did not respond within {protocol_timeout[2]} s)"
+    if "has no method" in message:
+        summary += " (browser driver does not support the requested operation)"
     return summary
 
 
