@@ -1,5 +1,6 @@
 ## v2.0.4 - v2.0.4
 ## What's Changed
+* Improve startup browser diagnostics before login: record runtime versions and page-creation/viewport stages, and retain safe timeout and closed-browser details without logging credential-bearing exception bodies.
 * Stabilize the persistent browser with seed 101 and desktop hardware pins: 24 logical processors, 3840×1600 screen and DPR 1.00. Replace the old 1920×1080 viewport with 1902×1398 for both new and reused pages. Use the supported AMD Radeon GPU identity because the library has no RX 6900 XT profile.
 * Attach `logs/octobot.log` and PNG screenshots to Apprise error notifications when `DEBUG=true`, including startup login failures and batched errors. Skip missing or unreadable files and upload diagnostics once per notification or batch.
 * Apply Ubuntu package updates during every container build, then clean apt metadata.
@@ -8,6 +9,7 @@
 * Retain before-and-after Trivy reports under `reports/security/v2.0.4` and exclude those reports from the image build context.
 
 ## Validation
+* Fresh local Podman build with Invisible Playwright 0.23.0 passed real login, saved-session reuse, normal bot/web startup, dashboard HTTP 200, and all 77 tests. Startup also passed with 1 CPU, 768 MiB RAM and 64 MiB shared memory. The Home Assistant page-creation failure was not reproduced; improved diagnostics are included for further investigation.
 * Local amd64 Trivy 0.74.0 scan: High findings reduced from 4 to 0; Critical findings remain 0. The final scan still reports 535 Medium and 52 Low findings; none were suppressed.
 * All 66 application tests passed, including Firefox fixtures. Verified that vulnerable codecs and installer copies are absent from the final image.
 * After adding debug error attachments, all 74 tests passed with the updated source mounted into the local Podman image. Attachment tests use synthetic files and mocked delivery; no external notifications were sent.

@@ -1,11 +1,13 @@
 """Website fallback for tariff initiation; agreement acceptance stays in the API."""
 
 import logging
+import platform
 import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -220,6 +222,10 @@ def logged_in_page(account_number: str, email: str, password: str):
     profile_dir = Path("logs") / "browser_profile"
     profile_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Starting headless Invisible Playwright with persistent browser profile.")
+    logger.debug(
+        "Browser runtime: invisible-playwright=%s; Python=%s; architecture=%s.",
+        version("invisible-playwright"), platform.python_version(), platform.machine(),
+    )
     with InvisiblePlaywright(
         profile_dir=profile_dir,
         headless=True,
@@ -238,15 +244,22 @@ def logged_in_page(account_number: str, email: str, password: str):
                 # and launch options for both persistent and ordinary contexts.
                 context = browser.new_context()
             try:
+                step = log_stage("checking existing browser pages")
                 pages = getattr(context, "pages", None)
                 if isinstance(pages, list) and len(pages) > 0:
                     page = pages[0]
                 else:
+                    step = log_stage("creating website browser page")
                     page = context.new_page()
                 # Viewport is the page's content area, not the physical monitor.
                 # Apply it to reused pages too, before any login navigation.
+                step = log_stage("setting website browser viewport")
                 page.set_viewport_size(DESKTOP_VIEWPORT.copy())
                 page.set_default_timeout(60_000)
+            except Exception as exc:
+                log_failure(logger, f"Preparing website browser failed while {step}", exc)
+                raise
+            try:
                 login_and_verify_account(page, account_number, email, password)
                 yield page
             finally:

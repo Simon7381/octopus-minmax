@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import config
-from diagnostics import log_failure
+from diagnostics import error_summary, log_failure
 from logger import setup_logging
 from notification_service import NotificationService
 from query_service import QueryService
@@ -95,6 +95,19 @@ class LoggingTests(unittest.TestCase):
         for secret in ("private-token", "private-api-key", "private-account"):
             self.assertNotIn(secret, output)
         self.assertIn("HTTP 200", output)
+
+    def test_browser_errors_keep_safe_operation_and_failure_details(self):
+        cases = [
+            ("BrowserContext.new_page: Timeout 30000ms exceeded. password=secret-value",
+             "RuntimeError in BrowserContext.new_page (timed out after 30000 ms)"),
+            ("BrowserContext.new_page: Target page, context or browser has been closed; token=secret-value",
+             "RuntimeError in BrowserContext.new_page (browser or page closed/crashed)"),
+            ("Failed to create new page https://example.invalid/secret-value",
+             "RuntimeError (browser could not create a page)"),
+        ]
+        for message, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(error_summary(RuntimeError(message)), expected)
 
     def test_batched_notifications_still_log_important_events_immediately(self):
         with patch.object(config, "BATCH_NOTIFICATIONS", True), \

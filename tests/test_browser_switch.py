@@ -171,6 +171,25 @@ class BrowserHardwareTests(unittest.TestCase):
 
 
 class BrowserLifecycleTests(unittest.TestCase):
+    def test_page_creation_failure_logs_stage_and_closes_browser(self):
+        with patch("browser_switch.InvisiblePlaywright") as start:
+            context = Mock(spec=["new_page", "pages", "close"])
+            context.pages = []
+            context.new_page.side_effect = InvisiblePlaywrightError(
+                "BrowserContext.new_page: Timeout 30000ms exceeded. password=secret-value"
+            )
+            start.return_value.__enter__.return_value = context
+            with self.assertLogs("octobot.browser_switch", level="DEBUG") as captured:
+                with self.assertRaises(InvisiblePlaywrightError):
+                    with logged_in_page("A-TEST", "email", "password"):
+                        self.fail("Page creation failed")
+            output = "\n".join(captured.output)
+            self.assertIn("creating website browser page", output)
+            self.assertIn("BrowserContext.new_page (timed out after 30000 ms)", output)
+            self.assertIn("Browser runtime: invisible-playwright=", output)
+            self.assertNotIn("secret-value", output)
+            context.close.assert_called_once()
+
     def test_prewarm_verifies_account_and_closes_persistent_context(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
             context = Mock(spec=["new_page", "pages", "close"])

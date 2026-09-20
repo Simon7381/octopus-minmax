@@ -9,7 +9,7 @@ def error_summary(exc: Exception) -> str:
     message = str(exc)
     # Playwright messages can include filled credentials, URLs and page contents.
     # Only extract an operation name and classify known errors; never log the body.
-    operation = re.match(r"^([A-Za-z]+\.[A-Za-z]+):", message)
+    operation = re.match(r"^([A-Za-z_][A-Za-z_0-9]*\.[A-Za-z_][A-Za-z_0-9]*):", message)
     if operation:
         summary += f" in {operation[1]}"
     if any(marker in message.lower() for marker in (
@@ -17,6 +17,18 @@ def error_summary(exc: Exception) -> str:
         "cannot find context with specified id",
     )):
         summary += " (browser execution context unavailable; page may be navigating)"
+    timeout = re.search(r"\btimeout\s+(\d{1,9})\s*ms\s+exceeded\b", message, re.IGNORECASE)
+    if timeout:
+        summary += f" (timed out after {timeout[1]} ms)"
+    elif "timeout" in type(exc).__name__.lower() or "timed out" in message.lower():
+        summary += " (browser operation timed out)"
+    if any(marker in message.lower() for marker in (
+        "target page, context or browser has been closed", "browser has been closed",
+        "page has been closed", "page crashed", "browser closed",
+    )):
+        summary += " (browser or page closed/crashed)"
+    if "failed to create new page" in message.lower():
+        summary += " (browser could not create a page)"
     return summary
 
 

@@ -213,6 +213,12 @@ the cause. Failures with an open page attempt to save a screenshot under
 Email and password inputs are masked; screenshots may still contain account details.
 If submission was attempted, check your Octopus account and emails before retrying.
 
+Failures while creating the browser page happen before website login and may have
+no screenshot. With debug enabled, the log includes the Invisible Playwright and
+Python versions, CPU architecture, page-creation/viewport stage, and recognized
+timeout or browser-closure details. Include these lines when reporting a Home
+Assistant startup failure; a generic `Error` alone does not identify its cause.
+
 To collect diagnostics without submitting a switch, use `TEST_PLAYWRIGHT=true` with
 `DEBUG=true`, then restart. Switch `TEST_PLAYWRIGHT` off and restart when finished.
 `DRY_RUN` alone does not exercise the browser fallback.
