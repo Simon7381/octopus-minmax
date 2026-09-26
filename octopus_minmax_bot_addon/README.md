@@ -108,9 +108,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.5`. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.6`. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.5` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.6` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 

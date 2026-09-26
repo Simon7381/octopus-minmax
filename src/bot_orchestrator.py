@@ -29,6 +29,7 @@ class BotOrchestrator:
         self.tariffs = []
         self.last_execution_datetime = None
         self.notification_service = None
+        self._browser_login_failed = False
 
     def start(self) -> None:
         if config.TEST_PLAYWRIGHT:
@@ -90,13 +91,19 @@ class BotOrchestrator:
                     ns.send_notification(
                         f"[{get_timestamp()}] Octobot {config.BOT_VERSION} - Initiating comparison in {delay / 60:.1f} minutes"
                     )
-                    time.sleep(delay)
+                    deadline = time.monotonic() + delay
+                    time.sleep(delay / 10)
+                    self._prewarm_browser_login()
+                    remaining_delay = deadline - time.monotonic()
+                    if remaining_delay > 0:
+                        time.sleep(remaining_delay)
                     self._run_tariff_compare()
 
             time.sleep(30)
 
     def _prewarm_browser_login(self) -> None:
         ns = self.notification_service
+        self._browser_login_failed = True
         if not all((config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD)):
             ns.send_notification(
                 "Browser login skipped: configure ACC_NUMBER, OCTOPUS_LOGIN_EMAIL and OCTOPUS_LOGIN_PASSWD.",
@@ -110,7 +117,7 @@ class BotOrchestrator:
                 config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD
             )
         except Exception as exc:
-            log_failure(logger, "Startup browser login failed", exc)
+            log_failure(logger, "Browser session check/login failed", exc)
             ns.send_notification(
                 "Browser login failed. See logs/octobot.log. Comparisons will continue; website login will be retried if needed for a switch.",
                 is_error=True,
@@ -118,6 +125,7 @@ class BotOrchestrator:
             )
             return
 
+        self._browser_login_failed = False
         masked_account = "*" * max(0, len(account_number) - 3) + account_number[-3:]
         ns.send_notification(
             f"Browser login complete. Verified account {masked_account}; browser session saved for reuse.",
@@ -236,6 +244,24 @@ class BotOrchestrator:
         if not target_tariff.product_code:
             ns.send_notification("ERROR: product_code is missing.", is_error=True)
             return
+
+        if self._browser_login_failed:
+            ns.send_notification(
+                "Browser login is unavailable. Retrying login once before switching.",
+                is_error=True,
+                batchable=False,
+            )
+            try:
+                prewarm_browser_login(
+                    config.ACC_NUMBER, config.OCTOPUS_LOGIN_EMAIL, config.OCTOPUS_LOGIN_PASSWD
+                )
+            except Exception as exc:
+                log_failure(logger, "Final browser login attempt before switching failed", exc)
+                raise RuntimeError(
+                    "Cannot switch tariff: Octopus website login failed after the final retry. "
+                    "Comparison completed; no switch was submitted. See logs/octobot.log."
+                ) from None
+            self._browser_login_failed = False
 
         enrolment_id = self.account_manager.initiate_tariff_switch(
             target_tariff.product_code

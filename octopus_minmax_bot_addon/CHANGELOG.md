@@ -1,3 +1,16 @@
+## v2.0.6 - v2.0.6
+## What's Changed
+* Verify the saved Octopus browser session during the scheduled comparison delay and sign in again when required.
+* Wait for one tenth of the randomized delay before checking login, varying when the website is accessed. Count this wait and the login check toward the total delay; if they exceed it, start comparison immediately afterward.
+* Continue tariff comparisons when login fails or credentials are missing. If a real switch is required, report the login error and retry once before submitting the switch; abort switching if the final login attempt fails.
+* Clear the recorded login failure after successful recovery. Dry runs and comparisons that do not require a switch do not perform the final retry.
+
+## Validation
+* All 80 tests that do not launch Firefox passed locally, including six new login-recovery tests. The six recovery tests also passed after adding the one-tenth delay.
+* Full-suite validation was stopped after repeated Firefox page-creation timeouts in browser integration tests.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.5...v2.0.6
+
 ## v2.0.5 - v2.0.5
 ## What's Changed
 * Replace character-by-character credential filling with whole-value input after waiting for visible, editable fields. Verify each field and recheck both before clicking Log in; allow one replacement attempt if entry fails before submission.
