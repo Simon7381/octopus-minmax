@@ -34,6 +34,7 @@ def setup_logging(log_dir="logs"):
         filename=os.path.join(log_dir, "octobot.log"),
         maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
+        encoding="utf-8",  # Match the WebUI reader, including pound signs on Windows.
     )
     file_handler.setLevel(level)
     file_handler.setFormatter(detailed_formatter)

@@ -1,15 +1,20 @@
 import logging
+import secrets
 from functools import wraps
 
-from flask import Flask, Response, flash, redirect, render_template, request
+from flask import Flask, Response, abort, flash, redirect, render_template, request
 
 import config
 import config_manager
+from comparison_preview import ComparisonPreview
+from diagnostics import log_failure
 
 logger = logging.getLogger("octobot.web_server")
 
 app = Flask(__name__)
 app.secret_key = "octobot-tool"
+comparison_preview = ComparisonPreview()
+preview_token = secrets.token_urlsafe(32)
 
 
 def is_ingress_request():
@@ -43,7 +48,31 @@ def require_auth(f):
 @require_auth
 def index():
     """Homepage - Dashboard with navigation buttons"""
-    return render_template("index.html")
+    return render_template("index.html", preview=comparison_preview.status(), preview_token=preview_token)
+
+
+@app.route("/preview", methods=["POST"])
+@require_auth
+def start_preview():
+    if not secrets.compare_digest(request.form.get("preview_token", "").encode(), preview_token.encode()):
+        abort(400, "Reload the dashboard before starting a preview.")
+    try:
+        started = comparison_preview.start()
+        flash("Comparison preview started. No tariff changes will be made." if started
+              else "A comparison preview is already running.", "success")
+    except Exception as exc:
+        log_failure(logger, "Could not start comparison preview", exc)
+        flash("Could not start the preview. See Logs for diagnostics.", "error")
+    # Relative URLs preserve the Home Assistant ingress prefix.
+    return redirect(".", code=303)
+
+
+@app.route("/preview-status")
+@require_auth
+def preview_status():
+    response = app.json.response(comparison_preview.status())
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/config", methods=["GET", "POST"])

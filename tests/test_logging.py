@@ -30,6 +30,7 @@ class LoggingTests(unittest.TestCase):
                         setup_logging(directory)
                         isolated.debug("hidden detail")
                         isolated.info("important event")
+                        isolated.info("PREVIEW — potential saving £1.10")
                     with patch.object(config, "DEBUG", True):
                         setup_logging(directory)
                         isolated.debug("enabled detail")
@@ -40,13 +41,14 @@ class LoggingTests(unittest.TestCase):
                     self.assertEqual(len(isolated.handlers), 2)
                     for handler in isolated.handlers:
                         handler.flush()
-                    outputs = [console.getvalue(), (Path(directory) / "octobot.log").read_text()]
+                    outputs = [console.getvalue(), (Path(directory) / "octobot.log").read_text(encoding="utf-8")]
                     for output in outputs:
                         self.assertNotIn("hidden detail", output)
                         self.assertNotIn("disabled detail", output)
                         self.assertEqual(output.count("important event"), 1)
                         self.assertIn("enabled detail", output)
                         self.assertIn("switch failed", output)
+                        self.assertIn("PREVIEW — potential saving £1.10", output)
                 for handler in isolated.handlers:
                     handler.close()
         finally:

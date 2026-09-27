@@ -1,3 +1,18 @@
+## v2.0.7 - v2.0.7
+## What's Changed
+
+* Add a dashboard comparison preview with background progress and immediate PREVIEW notifications/logs. Use today's available consumption and configured tariffs without website login, switching, or changes to scheduled/one-off execution. Isolate comparison state and prevent overlapping previews; support Home Assistant ingress paths.
+* Write logs as UTF-8 so the WebUI can display pound signs in cost comparisons on Windows as well as Linux.
+* Allow 120 seconds, instead of 30, for Firefox's `Browser.newPage` protocol reply before website login. The existing login-field and page timeouts do not control this deadline.
+* Scope the compatibility adjustment to the current browser connection and restore it after page creation, including failures. Do not retry page creation or login submissions. Pin Invisible Playwright to 0.25.7 while its private transport adapter is required.
+
+## Validation
+* All 104 tests passed in local Podman limited to half a CPU, 768 MiB RAM and 64 MiB shared memory, including a real Firefox page-creation reply delayed for 31 seconds. The original HA failure was not reproduced under these resource limits.
+* Browser checks with synthetic costs verified the ingress form, running/completed states and log results. All six logging tests passed on Windows and in the rebuilt image after the UTF-8 fix; no external test notifications were sent.
+* Fresh Octopus login and persistent-session reuse both verified the configured account under the same limits, with no tariff changes or external notifications.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.6...v2.0.7
+
 ## v2.0.6 - v2.0.6
 ## What's Changed
 * Verify the saved Octopus browser session during the scheduled comparison delay and sign in again when required.

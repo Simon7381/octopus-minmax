@@ -171,3 +171,5 @@ podman.env
 my-docker-compose.yaml
 logs/
 reports/
+
+/.codex-tmp

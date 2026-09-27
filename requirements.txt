@@ -4,5 +4,6 @@ requests
 aiohttp
 apprise
 Flask
-invisible-playwright
+# browser_runtime.py adapts this version's private page-creation timeout.
+invisible-playwright==0.25.7
 playwright

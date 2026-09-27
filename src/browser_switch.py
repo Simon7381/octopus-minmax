@@ -17,6 +17,7 @@ from invisible_playwright import InvisiblePlaywright
 from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError, expect
 from playwright.sync_api import Error
 
+from browser_runtime import new_browser_page
 from diagnostics import error_summary, is_navigation_context_error, log_failure
 from tariff import TARIFFS, Tariff
 
@@ -318,7 +319,7 @@ def logged_in_page(account_number: str, email: str, password: str):
                     page = pages[0]
                 else:
                     step = log_stage("creating website browser page")
-                    page = context.new_page()
+                    page = new_browser_page(context)
                 # Viewport is the page's content area, not the physical monitor.
                 # Apply it to reused pages too, before any login navigation.
                 step = log_stage("setting website browser viewport")

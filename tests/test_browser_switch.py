@@ -249,7 +249,7 @@ class BrowserLifecycleTests(unittest.TestCase):
 
     def test_page_creation_failure_logs_stage_and_closes_browser(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
-            context = Mock(spec=["new_page", "pages", "close"])
+            context = Mock(spec=["new_page", "pages", "close", "_impl_obj"])
             context.pages = []
             context.new_page.side_effect = InvisiblePlaywrightError(
                 "BrowserContext.new_page: Timeout 30000ms exceeded. password=secret-value"

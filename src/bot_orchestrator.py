@@ -1,6 +1,7 @@
 import logging
 import random
 import time
+from copy import deepcopy
 from datetime import datetime
 
 import config
@@ -200,6 +201,44 @@ class BotOrchestrator:
                 lines.append(f"No cost for {comparison.tariff.display_name}")
 
         return "\n".join(lines)
+
+    def run_comparison_preview(self) -> bool:
+        """Compare only, using private account/tariff state and no browser login."""
+        self.notification_service = NotificationService(
+            config.NOTIFICATION_URLS, config.BATCH_NOTIFICATIONS
+        )
+        ns = self.notification_service
+        logger.info("PREVIEW: Starting comparison of today's available consumption; no tariff changes.")
+        try:
+            self._load_tariffs_from_ids(config.TARIFFS)
+            # Comparison populates product codes. Do not mutate the scheduled
+            # run's tariff objects or its singleton account manager.
+            self.tariffs = deepcopy(self.tariffs)
+            self.query_service = QueryService(config.API_KEY, config.BASE_URL)
+            self.account_manager = AccountManager(self.query_service, self.tariffs)
+            account_info = self.account_manager.fetch_current_account_info()
+            result = ComparisonEngine(self.query_service).compare_tariffs(account_info, self.tariffs)
+            summary = self._format_comparison_summary(result)
+            if result.cheapest_tariff is not None:
+                summary += (
+                    f"\nCheapest eligible tariff: {result.cheapest_tariff.display_name}. "
+                    f"Potential saving: £{max(0, result.potential_savings) / 100:.2f}."
+                )
+            else:
+                summary += "\nNo eligible switchable tariff found."
+            ns.send_notification(
+                f"PREVIEW — today's available consumption\n{summary}\n"
+                "Comparison only: no tariff switch requested. Scheduled operation is unchanged.",
+                title="Octobot comparison preview", batchable=False,
+            )
+            return True
+        except Exception as exc:
+            log_failure(logger, "PREVIEW comparison failed", exc)
+            ns.send_notification(
+                "PREVIEW failed. No tariff switch requested. See logs/octobot.log for diagnostics.",
+                title="Octobot comparison preview", is_error=True, batchable=False,
+            )
+            return False
 
     def _compare_and_switch(self) -> None:
         ns = self.notification_service

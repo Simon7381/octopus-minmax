@@ -16,7 +16,17 @@ After starting the bot you can access the web dashboard on `localhost:5050`
 
 - Make changes to your config through the dashboard without needing to restart
 - Access and read logs
+- Run a comparison preview without switching tariffs
 - See graph of savings (coming soon)
+
+Choose **Run comparison preview** on the dashboard (including Home Assistant
+ingress) to compare today's available consumption across your configured tariffs.
+It runs in the background and sends a clearly labelled **PREVIEW** result to the
+logs and configured notification channel, immediately even when batching is enabled.
+The preview never signs into the website or requests a tariff switch, and it does
+not change dry-run settings, the scheduled comparison or one-off execution state.
+Only one preview runs at a time; the dashboard shows its progress and completion.
+This uses consumption received so far today, not a forecast of the full day's cost.
 
 ## How to Use
 
@@ -108,9 +118,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.6`. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.7`. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.6` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.7` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 
@@ -170,6 +180,15 @@ the resulting URL or page source before inspecting or submitting a signup form.
 Only `go`, `agile` and `cosy` have website routes. `go-fix-12m` is supported through
 GraphQL only; if its API initiation fails, the bot reports an error without opening
 the browser. The Go website route accepts the displayed terms without selecting a variant.
+
+Before login, browser page creation allows 120 seconds for Firefox to answer
+`Browser.newPage` (previously 30 seconds). This is a separate protocol deadline;
+the page's normal timeout and the login-field timeout cannot change it. Invisible
+Playwright 0.25.7 hard-codes this limit, so `src/browser_runtime.py` temporarily
+adapts only that command on the current connection, without retrying page creation.
+The library is pinned to the tested version while this private compatibility
+adapter is needed. A browser that crashes or remains stuck can still fail;
+the longer deadline provides headroom for slow hosts, not guaranteed recovery.
 
 Login allows 120 seconds for field visibility and editability checks, then
 replaces its value using whole-text input. Each field is checked, and both are

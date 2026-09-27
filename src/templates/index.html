@@ -23,5 +23,43 @@
             </div>
         </a>
     </div>
+
+    <section class="w-full max-w-4xl mt-8 bg-gray-800 border-2 border-gray-600 rounded-2xl p-6 md:p-8" aria-labelledby="preview-heading">
+        <h3 id="preview-heading" class="text-2xl font-bold text-gray-100">Comparison preview</h3>
+        <p class="text-gray-300 mt-3">Compare today's available consumption across your configured tariffs.
+            No tariff changes will be made, and your schedule stays unchanged.</p>
+        <p class="text-gray-400 mt-2">Results are saved in Logs and sent to your configured notification channel.</p>
+        <form action="preview" method="POST" class="mt-6" id="preview-form">
+            <input type="hidden" name="preview_token" value="{{ preview_token }}">
+            <button type="submit" id="preview-button" {% if preview.running %}disabled{% endif %}
+                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-400">
+                {{ 'Preview running…' if preview.running else 'Run comparison preview' }}
+            </button>
+            <a href="logs" class="inline-block ml-4 mt-3 text-blue-400 hover:text-blue-300 underline">View logs</a>
+        </form>
+        <p id="preview-status" role="status" aria-live="polite" class="text-gray-300 mt-4">{{ preview.message }}</p>
+    </section>
 </div>
+<script>
+    const previewButton = document.getElementById('preview-button');
+    const previewStatus = document.getElementById('preview-status');
+    document.getElementById('preview-form').addEventListener('submit', () => {
+        previewButton.disabled = true;
+        previewButton.textContent = 'Starting preview…';
+    });
+    async function refreshPreview() {
+        try {
+            const response = await fetch('preview-status', {cache: 'no-store'});
+            if (!response.ok) throw new Error('Status unavailable');
+            const status = await response.json();
+            previewButton.disabled = status.running;
+            previewButton.textContent = status.running ? 'Preview running…' : 'Run comparison preview';
+            previewStatus.textContent = status.message;
+        } catch (_) {
+            previewStatus.textContent = 'Preview status unavailable. Refresh the dashboard or check Logs.';
+        }
+        setTimeout(refreshPreview, 5000);
+    }
+    setTimeout(refreshPreview, 5000);
+</script>
 {% endblock %}
