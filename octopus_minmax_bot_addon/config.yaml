@@ -9,9 +9,10 @@ ports:
 ports_description:
   5050/tcp: Web UI (optional external access)
 webui: http://[HOST]:[PORT:5050]/
-version: v2.0.7a
+version: v2.0.8
 slug: octopus_minmax_bot
 startup: application
+stdin: true
 init: false
 legacy: true
 description: A bot to automatically compare and switch smart electricity tariffs on Octopus Energy

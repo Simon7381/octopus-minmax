@@ -8,6 +8,10 @@ logger.info("Octobot %s starting; DEBUG=%s; log file: logs/octobot.log", config.
 
 import web_server
 from bot_orchestrator import BotOrchestrator
+from ha_preview import start_preview_listener
+
+# HA's native button and the WebUI must share the same in-flight preview lock.
+start_preview_listener(web_server.comparison_preview)
 
 orchestrator = BotOrchestrator()
 bot_thread = threading.Thread(target=orchestrator.start, daemon=False, name="BotThread")

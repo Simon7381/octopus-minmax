@@ -53,6 +53,70 @@ To install this third-party add-on:
    https://github.com/Simon7381/octopus-minmax
 4. Refresh the page if needed. The add-on will appear under **Octopus MinMax Bot**.
 
+### Home Assistant dashboard push button
+
+With add-on **v2.0.8 or newer**, create a native **Template Button** helper once.
+It can be assigned to a room/area and added to Overview or any dashboard, and
+pressed from the HA web interface or Companion mobile app. Each press starts
+the same comparison preview as the bot's WebUI, with results in logs and your
+configured notification channel. Repeated presses while a preview is running
+do not start another comparison. There is no on/off state to reset.
+
+1. Update and restart the add-on, then open **Settings → Devices & services →
+   Helpers → Create helper → Template → Button**.
+2. Name it **Octopus MinMax Comparison Preview**. Under **Actions on press**,
+   select **Home Assistant Supervisor: Write data to app stdin**, choose
+   **Octopus MinMax Bot**, and set Input to `{ "command": "comparison_preview" }`.
+   Alternatively, use this YAML in the action editor:
+
+   ```yaml
+   - action: hassio.app_stdin
+     data:
+       app: YOUR_ADDON_SLUG
+       input:
+         command: comparison_preview
+   ```
+
+   Replace `YOUR_ADDON_SLUG` with the installed add-on's full slug, including
+   its repository prefix, from its Settings page URL (the segment before
+   `/info`). On older HA versions, use `hassio.addon_stdin` and replace the
+   `app:` key with `addon:`. This uses Supervisor and requires an HA administrator
+   account; it does not require MQTT or access to the bot's HTTP port.
+3. Save the helper. In its entity settings, assign an area if wanted and confirm
+   its entity ID is `button.octopus_minmax_comparison_preview` (adjust the card
+   below if yours differs).
+4. Edit your dashboard and add a **Button** card for that entity. Set its tap
+   action to **Perform action → Button: Press**, targeting the same entity.
+   For a manual card, use:
+
+   ```yaml
+   type: button
+   entity: button.octopus_minmax_comparison_preview
+   name: Compare tariffs
+   icon: mdi:calculator
+   show_state: false
+   tap_action:
+     action: perform-action
+     perform_action: button.press
+     target:
+       entity_id: button.octopus_minmax_comparison_preview
+   ```
+
+If you prefer YAML configuration instead of a helper, use the
+[template button example](https://github.com/Simon7381/octopus-minmax/blob/main/home_assistant/comparison_preview.yaml)
+and [dashboard card example](https://github.com/Simon7381/octopus-minmax/blob/main/home_assistant/comparison_preview_card.yaml).
+Merge the template entry into your existing `template:` list, check HA's
+configuration, then reload Template entities (or restart HA). Choose either
+the UI helper or the YAML entity, not both.
+
+The add-on enables Supervisor's standard input command channel; it does not
+automatically create the helper. An offline add-on cannot receive button presses;
+check its logs if a press does not produce a preview result. This setup is for
+HA installations with Supervisor, not standalone Docker installations of the bot.
+See HA's [Template Button](https://www.home-assistant.io/integrations/template/#button)
+and [app stdin action](https://www.home-assistant.io/actions/hassio.app_stdin/)
+documentation.
+
 ### Running Manually
 
 1. Install the Python requirements.
@@ -118,9 +182,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.7`. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.8` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.7` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.8` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 

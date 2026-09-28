@@ -1,3 +1,17 @@
+## v2.0.8 - v2.0.8
+## What's Changed
+
+* Expose comparison previews to native Home Assistant Template Button helpers through Supervisor's standard input action. Enable `stdin` on the add-on and accept only the comparison preview command.
+* Share the existing WebUI preview worker and duplicate-run protection. Button presses run comparisons only, with results in logs and the configured notification channel; scheduled runs and tariff switching settings stay unchanged.
+* Add setup instructions to the dashboard and both READMEs, plus template entity and dashboard card YAML examples. Create the helper once, assign it to an area and use a push button from HA web or mobile; no MQTT is required.
+* Set the application and add-on release version to v2.0.8.
+
+## Validation
+* All 110 offline tests passed in the rebuilt Podman image with half a CPU, 768 MiB RAM and 64 MiB shared memory. New coverage includes command delivery over an open pipe, invalid input, failure recovery, and shared HA/WebUI progress and duplicate-run protection.
+* Sending a Supervisor-shaped command to the container's stdin started a mocked comparison and returned completed status through the WebUI. No live tariff operations or external notifications were used. The helper/card YAML was checked locally; installation on a live HA instance remains to be verified.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.7a...v2.0.8
+
 ## v2.0.7 - v2.0.7
 ## What's Changed
 

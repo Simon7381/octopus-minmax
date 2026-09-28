@@ -59,10 +59,13 @@ class LoggingTests(unittest.TestCase):
     def test_main_initializes_logging_before_starting_threads(self):
         fake_logger = Mock()
         with patch("logger.setup_logging", return_value=fake_logger) as setup, \
-                patch.dict(sys.modules, {"web_server": Mock(), "bot_orchestrator": Mock()}), \
+                patch.dict(sys.modules, {"web_server": Mock(), "bot_orchestrator": Mock(), "ha_preview": Mock()}), \
                 patch("threading.Thread") as thread:
             thread.return_value.start.side_effect = lambda: setup.assert_called_once()
             runpy.run_path(str(ROOT / "src" / "main.py"))
+            sys.modules["ha_preview"].start_preview_listener.assert_called_once_with(
+                sys.modules["web_server"].comparison_preview
+            )
             self.assertEqual(thread.return_value.start.call_count, 2)
             fake_logger.info.assert_any_call(
                 "Octobot %s starting; DEBUG=%s; log file: logs/octobot.log",

@@ -38,6 +38,18 @@
             <a href="logs" class="inline-block ml-4 mt-3 text-blue-400 hover:text-blue-300 underline">View logs</a>
         </form>
         <p id="preview-status" role="status" aria-live="polite" class="text-gray-300 mt-4">{{ preview.message }}</p>
+        <details class="mt-6 text-gray-300">
+            <summary class="cursor-pointer text-blue-400">Add a push button to Home Assistant</summary>
+            <p class="mt-3">With add-on v2.0.8 or newer, create a Template Button helper in
+                Settings → Devices &amp; services → Helpers. Its press action should send
+                <code>{"command": "comparison_preview"}</code> to Octopus MinMax Bot using
+                Home Assistant Supervisor's “Write data to app stdin” action.</p>
+            <p class="mt-2">Assign the helper to an area and add a Button card to your dashboard
+                to run previews from the HA web or mobile app using an administrator account.</p>
+            <a class="inline-block mt-3 text-blue-400 underline"
+                href="https://github.com/Simon7381/octopus-minmax#home-assistant-dashboard-push-button"
+                target="_blank" rel="noopener noreferrer">Setup instructions and example card</a>
+        </details>
     </section>
 </div>
 <script>

@@ -1,0 +1,18 @@
+# Merge this template block into Home Assistant's configuration.yaml, or use it
+# as a package if you already enable packages. Replace YOUR_ADDON_SLUG with the
+# full installed add-on slug from its HA URL (including the repository prefix).
+# Requires Octopus MinMax Bot v2.0.8 or newer.
+# Supervisor's stdin action requires an HA administrator account to press.
+# Older HA: use hassio.addon_stdin and rename the app key below to addon.
+template:
+  - button:
+      - name: Octopus MinMax Comparison Preview
+        unique_id: octopus_minmax_comparison_preview
+        default_entity_id: button.octopus_minmax_comparison_preview
+        icon: mdi:calculator
+        press:
+          - action: hassio.app_stdin
+            data:
+              app: YOUR_ADDON_SLUG
+              input:
+                command: comparison_preview

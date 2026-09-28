@@ -1,0 +1,11 @@
+# Dashboard card for the native button above. Works in the HA web and mobile UI.
+type: button
+entity: button.octopus_minmax_comparison_preview
+name: Compare tariffs
+icon: mdi:calculator
+show_state: false
+tap_action:
+  action: perform-action
+  perform_action: button.press
+  target:
+    entity_id: button.octopus_minmax_comparison_preview
