@@ -40,6 +40,7 @@ DESKTOP_HARDWARE_PINS = {
     "screen.dpr": 1.0,
 }
 LOGIN_FIELD_TIMEOUT_MS = 120_000
+COSY_SELECTION_TIMEOUT_SECONDS = 30
 CREDENTIAL_MASK_SELECTOR = (
     'input[type="password"], input[type="email"], '
     '#id_auth-username, #id_auth-password, input[autocomplete="username"]'
@@ -132,31 +133,86 @@ def wait_for_login_redirect(page, timeout_seconds: int = 60) -> None:
     )
 
 
+def _cosy_selection_controls(page):
+    """Identify both options from explicit card labels or native radio inputs."""
+    chips = page.locator('[data-testid="tariff-card-chip"]')
+    controls = []
+    if chips.count():
+        if chips.count() != 2:
+            raise RuntimeError("Cosy tariff cards are ambiguous; switch was not submitted")
+        for name in ("Variable", "Fixed"):
+            chip = chips.filter(has_text=re.compile(rf"^\s*{name}\s*$", re.I))
+            if chip.count() != 1:
+                raise RuntimeError(f"Cosy signup has no unique {name} option; switch was not submitted")
+            # The live page's chip and selection button share this nearest
+            # ancestor. Never click the decorative Variable text itself.
+            card = chip.locator("xpath=ancestor::*[.//button][1]")
+            if card.locator('[data-testid="tariff-card-chip"]').count() != 1:
+                raise RuntimeError("Cosy tariff card boundaries are ambiguous; switch was not submitted")
+            controls.append(card.get_by_role("button"))
+        kind = "card"
+    else:
+        controls = [page.get_by_role("radio", name=re.compile(rf"\b{name}\b", re.I))
+                    for name in ("Variable", "Fixed")]
+        kind = "radio"
+    if any(control.count() != 1 or not control.is_visible() for control in controls):
+        raise RuntimeError("Cosy signup has no verifiable Variable and Fixed controls; switch was not submitted")
+    return *controls, kind
+
+
+def verify_cosy_variable_selected(page) -> None:
+    """Fail closed unless Variable is selected AND Fixed is explicitly unselected."""
+    variable, fixed, kind = _cosy_selection_controls(page)
+    if kind == "radio":
+        safe = variable.is_checked() and not fixed.is_checked()
+    else:
+        safe = (variable.inner_text().strip().casefold() == "selected"
+                and fixed.inner_text().strip().casefold() == "select tariff")
+    if not safe:
+        raise RuntimeError("Cosy Variable selection is unconfirmed or Fixed is selected; switch was not submitted")
+    logger.debug("Cosy selection verified: Variable selected; Fixed not selected.")
+
+
+def select_cosy_variable(page) -> None:
+    # Cosy's cards can arrive after the document has loaded. This wait only
+    # detects readiness; the label itself is never treated as selection proof.
+    try:
+        page.get_by_text("Variable", exact=True).first.wait_for()
+    except (Error, InvisiblePlaywrightError):
+        raise RuntimeError("Cosy signup has no verifiable Variable and Fixed controls; switch was not submitted") from None
+    variable, fixed, kind = _cosy_selection_controls(page)
+    if kind == "radio":
+        variable.check()
+    elif variable.inner_text().strip().casefold() == "select tariff":
+        variable.click()
+    # Allow the site's selection update to finish, but never infer success
+    # from a click or from the URL's variant parameter alone.
+    # Invisible Playwright 0.25.7 does not implement text assertions. Poll
+    # the actual controls instead, with a bounded wait for React to update.
+    deadline = time.monotonic() + COSY_SELECTION_TIMEOUT_SECONDS
+    while True:
+        try:
+            verify_cosy_variable_selected(page)
+            return
+        except RuntimeError:
+            if time.monotonic() >= deadline:
+                raise
+        page.wait_for_timeout(200)
+
+
 def prepare_signup(page, tariff: Tariff) -> dict:
     """Select the requested variant and accept any displayed signup terms."""
     flow = SIGNUP_FLOWS[tariff.id]
     checks = {"terms_checked": False, "variable_selected": False}
+    if flow.option:
+        log_stage(f"selecting {tariff.id} {flow.option} option")
+        select_cosy_variable(page)
+        checks["variable_selected"] = True
+
     log_stage(f"waiting for {tariff.id} Switch Tariff button")
     page.get_by_role(
         "button", name=re.compile(r"^Switch Tariff$", re.IGNORECASE)
     ).wait_for()
-    if flow.option:
-        log_stage(f"selecting {tariff.id} {flow.option} option")
-        option_name = re.compile(rf"\b{flow.option}\b", re.IGNORECASE)
-        radio = page.get_by_role("radio", name=option_name)
-        button = page.get_by_role("button", name=option_name)
-        label = page.get_by_text(flow.option, exact=True)
-        if radio.count():
-            radio.check()
-        elif button.count():
-            button.click()
-        elif label.count():
-            label.click()
-        elif tariff.id == "cosy":
-            raise RuntimeError(
-                "Cosy signup has no Variable option; switch was not submitted"
-            )
-        checks["variable_selected"] = True
 
     log_stage(f"checking {tariff.id} signup terms")
     terms = page.get_by_role(
@@ -169,6 +225,8 @@ def prepare_signup(page, tariff: Tariff) -> dict:
     elif terms.count():
         terms.check()
         checks["terms_checked"] = terms.is_checked()
+    if tariff.id == "cosy":
+        verify_cosy_variable_selected(page)
     logger.info("Website signup ready for %s: terms_checked=%s, variable_selected=%s.",
                 tariff.id, checks["terms_checked"], checks["variable_selected"])
     return checks
@@ -355,8 +413,13 @@ def prewarm_browser_login(account_number: str, email: str, password: str) -> str
 def open_signup(page, tariff: Tariff, account_number: str) -> None:
     slug = SIGNUP_FLOWS[tariff.id].slug
     logger.info("Opening %s website signup.", tariff.id)
+    path = "sign-up/"
+    query = {"accountNumber": account_number}
+    if tariff.id == "cosy":
+        path += "new/"
+        query["variant"] = "VARIABLE"
     page.goto(
-        f"https://octopus.energy/smart/{slug}/sign-up/?{urlencode({'accountNumber': account_number})}"
+        f"https://octopus.energy/smart/{slug}/{path}?{urlencode(query)}"
     )
 
 
@@ -434,11 +497,18 @@ def initiate_browser_switch(
             open_signup(page, tariff, account_number)
             stage = log_stage(f"preparing {tariff.id} signup controls")
             prepare_signup(page, tariff)
+            switch_button = page.get_by_role(
+                "button", name=re.compile(r"^Switch Tariff$", re.IGNORECASE)
+            )
+            if tariff.id == "cosy":
+                stage = log_stage("verifying Cosy Variable selection before submission")
+                switch_button.wait_for(state="visible")
+                if not switch_button.is_enabled():
+                    raise RuntimeError("Cosy Switch Tariff button is disabled; switch was not submitted")
+                verify_cosy_variable_selected(page)
             stage = "tariff submission (check your account before retrying)"
             logger.info("Submitting %s website tariff switch.", tariff.id)
-            page.get_by_role(
-                "button", name=re.compile(r"^Switch Tariff$", re.IGNORECASE)
-            ).click()
+            switch_button.click()
             stage = "verifying enrolment after submission (check your account before retrying)"
             logger.info("Website switch clicked; waiting for exact target product enrolment.")
             enrolment_id = wait_for_enrolment()

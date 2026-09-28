@@ -182,9 +182,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.8` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.9` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.8` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.9` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 
@@ -233,7 +233,7 @@ if the testing desktop changes. See [Invisible Playwright pinning](https://githu
 | --------- | -------------- | ------------------------------------------------------------------------ |
 | `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                |
 | `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                             |
-| `cosy`    | `cosy-octopus` | Select Variable explicitly, check terms if displayed, then Switch Tariff |
+| `cosy`    | `cosy-octopus` | Open `sign-up/new/` with `variant=VARIABLE`; verify Variable is selected and Fixed is not selected before Switch Tariff |
 
 Each path opens `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`
 and follows Octopus's redirect to its current signup route.

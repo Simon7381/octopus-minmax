@@ -1,3 +1,17 @@
+## v2.0.9 - v2.0.9
+## What's Changed
+
+* Fix Cosy website selection: use `sign-up/new/?accountNumber=<configured account>&variant=VARIABLE` and select the Variable card's actual control instead of its decorative label.
+* Require Variable to be selected and Fixed to be explicitly unselected. Refuse to submit when selection is missing, ambiguous or still Fixed, and repeat the check immediately before Switch Tariff.
+* Wait for Variable selection before looking for its Switch Tariff button, including delayed page updates.
+* Set the application and add-on release version to v2.0.9.
+
+## Validation
+* All 117 offline tests passed in Podman with half a CPU, 768 MiB RAM and 64 MiB shared memory before the version-only update. Coverage includes Cosy card/radio selection, unchanged clicks, ambiguous or conflicting states, delayed updates, and selection reverting before submission.
+* Live Cosy checks in Podman using `my-docker-compose.yaml` settings confirmed the Variable URL, rejected an explicitly selected Fixed card, then selected and verified Variable with Fixed unselected and Switch Tariff available. No tariff switch was submitted.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.8...v2.0.9
+
 ## v2.0.8 - v2.0.8
 ## What's Changed
 

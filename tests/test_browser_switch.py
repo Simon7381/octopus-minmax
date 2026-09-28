@@ -32,6 +32,7 @@ from browser_switch import (
     run_playwright_checks,
     save_failure_screenshot,
     wait_for_login_redirect,
+    verify_cosy_variable_selected,
 )
 from tariff import Tariff
 
@@ -152,16 +153,113 @@ class SignupControlsTests(unittest.TestCase):
         self.assertTrue(self.page.get_by_role("radio", name="Variable").is_checked())
         self.assertFalse(self.page.get_by_role("radio", name="Fixed").is_checked())
 
-    def test_cosy_selects_variable_button(self):
+    def test_cosy_text_button_without_selected_state_is_rejected(self):
         self.load("<button onclick=\"window.plan = 'variable'\">Variable</button>")
-        prepare_signup(self.page, tariff("cosy"))
-        self.assertEqual(self.page.evaluate("window.plan"), "variable")
+        with self.assertRaisesRegex(RuntimeError, "no verifiable Variable and Fixed"):
+            prepare_signup(self.page, tariff("cosy"))
+        self.assertIsNone(self.page.evaluate("window.submitted"))
 
     def test_cosy_missing_variable_fails_before_submission(self):
         self.load('<label><input type="radio" checked>Fixed</label>')
-        with self.assertRaisesRegex(RuntimeError, "no Variable option"):
+        with self.assertRaisesRegex(RuntimeError, "no verifiable Variable and Fixed"):
             prepare_signup(self.page, tariff("cosy"))
         self.assertIsNone(self.page.evaluate("window.submitted"))
+
+    def load_cosy_cards(self, variable_selected=False, click_changes_selection=True):
+        # Mirrors the observed live card structure: a decorative chip and a
+        # separate Select tariff / Selected button in its containing card.
+        action = ("document.querySelector('#fixed').textContent='Select tariff';"
+                  "this.textContent='Selected';") if click_changes_selection else ""
+        self.load(f'''
+            <section><div><div data-testid="tariff-card-chip"><span>Fixed</span></div></div>
+                <button id="fixed">{'Select tariff' if variable_selected else 'Selected'}</button></section>
+            <section><div><div data-testid="tariff-card-chip"><span>Variable</span></div></div>
+                <button id="variable" onclick="{action}">{'Selected' if variable_selected else 'Select tariff'}</button></section>
+        ''')
+
+    def test_cosy_selects_card_control_and_verifies_fixed_is_unselected(self):
+        self.load_cosy_cards()
+        result = prepare_signup(self.page, tariff("cosy"))
+        self.assertTrue(result["variable_selected"])
+        self.assertEqual(self.page.locator('#variable').inner_text(), "Selected")
+        self.assertEqual(self.page.locator('#fixed').inner_text(), "Select tariff")
+        self.assertIsNone(self.page.evaluate("window.submitted"))
+
+    def test_cosy_preselected_variable_card_needs_no_selection_click(self):
+        self.load_cosy_cards(variable_selected=True)
+        self.page.locator('#variable').evaluate("e => e.onclick = () => { throw Error('Must not click selected card'); }")
+        self.assertTrue(prepare_signup(self.page, tariff("cosy"))["variable_selected"])
+
+    def test_cosy_selects_variable_before_waiting_for_switch_button(self):
+        self.load_cosy_cards()
+        self.page.get_by_role('button', name='Switch Tariff').evaluate("e => e.style.display='none'")
+        self.page.locator('#variable').evaluate('''e => {
+            e.onclick = () => setTimeout(() => {
+                e.textContent = 'Selected';
+                document.querySelector('#fixed').textContent = 'Select tariff';
+                [...document.querySelectorAll('button')].find(b => b.textContent === 'Switch Tariff').style.display = '';
+            }, 300);
+        }''')
+        self.assertTrue(prepare_signup(self.page, tariff("cosy"))["variable_selected"])
+        self.assertIsNone(self.page.evaluate('window.submitted'))
+
+    def test_cosy_noop_selection_never_reports_success(self):
+        self.load_cosy_cards(click_changes_selection=False)
+        with patch('browser_switch.COSY_SELECTION_TIMEOUT_SECONDS', 0.3), \
+                self.assertRaisesRegex(RuntimeError, "unconfirmed or Fixed is selected"):
+            prepare_signup(self.page, tariff("cosy"))
+        self.assertEqual(self.page.locator('#fixed').inner_text(), "Selected")
+        self.assertIsNone(self.page.evaluate("window.submitted"))
+
+    def test_cosy_conflicting_or_missing_selection_evidence_is_rejected(self):
+        for fixed in ("Selected", "Unknown", ""):
+            with self.subTest(fixed=fixed):
+                self.load_cosy_cards(variable_selected=True)
+                self.page.locator('#fixed').evaluate("(e, value) => e.textContent=value", fixed)
+                with self.assertRaisesRegex(RuntimeError, "unconfirmed or Fixed is selected"):
+                    verify_cosy_variable_selected(self.page)
+        self.load('<label><input type="radio" name="v" checked>Variable</label>'
+                  '<label><input type="radio" name="f" checked>Fixed</label>')
+        with self.assertRaisesRegex(RuntimeError, "unconfirmed or Fixed is selected"):
+            verify_cosy_variable_selected(self.page)
+
+    def test_cosy_ambiguous_or_hidden_cards_are_rejected(self):
+        self.load_cosy_cards(variable_selected=True)
+        self.page.locator('#fixed').evaluate("e => e.style.display='none'")
+        with self.assertRaisesRegex(RuntimeError, "no verifiable Variable and Fixed"):
+            verify_cosy_variable_selected(self.page)
+        self.load_cosy_cards(variable_selected=True)
+        self.page.evaluate("document.body.insertAdjacentHTML('beforeend', '<div data-testid=\"tariff-card-chip\">Variable</div>')")
+        with self.assertRaisesRegex(RuntimeError, "ambiguous"):
+            verify_cosy_variable_selected(self.page)
+
+    def test_cosy_submission_rechecks_selection_after_preparation(self):
+        for revert in (True, False):
+            with self.subTest(revert=revert):
+                self.load_cosy_cards()
+
+                def prepare_then_maybe_revert(page, target):
+                    result = prepare_signup(page, target)
+                    if revert:
+                        page.locator('#fixed').evaluate("e => e.textContent='Selected'")
+                        page.locator('#variable').evaluate("e => e.textContent='Select tariff'")
+                    return result
+
+                enrolment = Mock(return_value="test-enrolment")
+                with patch('browser_switch.logged_in_page') as login, \
+                        patch('browser_switch.open_signup'), \
+                        patch('browser_switch.prepare_signup', side_effect=prepare_then_maybe_revert), \
+                        patch('browser_switch.save_failure_screenshot'):
+                    login.return_value.__enter__.return_value = self.page
+                    if revert:
+                        with self.assertRaisesRegex(RuntimeError, "unconfirmed or Fixed is selected"):
+                            initiate_browser_switch(tariff('cosy'), 'A-TEST', 'test@example.invalid', 'test', enrolment)
+                        self.assertIsNone(self.page.evaluate('window.submitted'))
+                        enrolment.assert_not_called()
+                    else:
+                        self.assertEqual(initiate_browser_switch(tariff('cosy'), 'A-TEST', 'test@example.invalid', 'test', enrolment), 'test-enrolment')
+                        self.assertTrue(self.page.evaluate('window.submitted'))
+                        enrolment.assert_called_once()
 
     def test_test_mode_checks_all_three_forms_without_submitting(self):
         visited = []
@@ -510,6 +608,7 @@ class BrowserLifecycleTests(unittest.TestCase):
                 self.subTest(tariff=identifier),
                 patch("browser_switch.InvisiblePlaywright") as start,
                 patch("browser_switch.prepare_signup"),
+                patch("browser_switch.verify_cosy_variable_selected"),
             ):
                 browser = start.return_value.__enter__.return_value
                 context = browser.new_context.return_value
@@ -533,7 +632,9 @@ class BrowserLifecycleTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     page.goto.call_args.args[0],
-                    f"https://octopus.energy/smart/{slug}/sign-up/?accountNumber=A-TEST",
+                    (f"https://octopus.energy/smart/{slug}/sign-up/new/?accountNumber=A-TEST&variant=VARIABLE"
+                     if identifier == "cosy" else
+                     f"https://octopus.energy/smart/{slug}/sign-up/?accountNumber=A-TEST"),
                 )
                 context.close.assert_called_once()
                 browser.close.assert_not_called()
