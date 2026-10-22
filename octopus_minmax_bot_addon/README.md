@@ -182,9 +182,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.9` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.10` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.9` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.10` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 
@@ -241,18 +241,14 @@ The browser opens `https://octopus.energy/dashboard/`, follows Octopus's redirec
 `https://auth.octopus.energy/login/`, submits the current login form, then loads
 `/dashboard/` again and verifies the configured account number in
 the resulting URL or page source before inspecting or submitting a signup form.
-Only `go`, `agile` and `cosy` have website routes. `go-fix-12m` is supported through
-GraphQL only; if its API initiation fails, the bot reports an error without opening
-the browser. The Go website route accepts the displayed terms without selecting a variant.
+Only `agile` and `cosy` support switching and have website routes. Both `go` and
+`go-fix-12m` are comparison-only; switching to either Go variant is disabled.
 
-Before login, browser page creation allows 120 seconds for Firefox to answer
-`Browser.newPage` (previously 30 seconds). This is a separate protocol deadline;
-the page's normal timeout and the login-field timeout cannot change it. Invisible
-Playwright 0.25.7 hard-codes this limit, so `src/browser_runtime.py` temporarily
-adapts only that command on the current connection, without retrying page creation.
-The library is pinned to the tested version while this private compatibility
-adapter is needed. A browser that crashes or remains stuck can still fail;
-the longer deadline provides headroom for slow hosts, not guaranteed recovery.
+Browser page creation uses Invisible Playwright's normal `context.new_page()`
+API and upstream timeout behaviour. The former 120-second private transport
+workaround has been removed, so it no longer requires a specific library version.
+`invisible-playwright` is unpinned: fresh installs and uncached container builds
+resolve the latest stable release. Existing environments need an explicit upgrade.
 
 Login allows 120 seconds for field visibility and editability checks, then
 replaces its value using whole-text input. Each field is checked, and both are
@@ -328,7 +324,7 @@ Install the resulting image/add-on update before enabling the new option.
 ### Testing on Windows with Podman Desktop
 
 Set `TEST_PLAYWRIGHT=true` in your Compose environment and recreate the container to
-test the live website login and all three signup pages. This startup mode takes
+test the live website login and both supported signup pages. This startup mode takes
 precedence over `DRY_RUN`, `ONE_OFF`, the configured tariff list and scheduling.
 It checks Go's terms checkbox, any displayed Agile terms, Cosy's Variable option,
 and whether each Switch Tariff button is actionable using a trial click that does
@@ -374,14 +370,15 @@ browser session or an Octopus login flow that does not challenge automation is r
    it does **not** exercise the website fallback. One-off mode leaves the dashboard
    running after the comparison. Stop it with `podman stop octopus-minmax-test`.
 
-5. Validate the authenticated login and signup controls for Go, Agile and Cosy,
+5. Validate the authenticated login and signup controls for Agile and Cosy,
    stopping before Switch Tariff. The automated fixtures model the reported controls;
    they cannot prove the current live page structure or account eligibility.
 6. Run one supervised live switch with `DRY_RUN=false`, confirm the fallback finds
    the correct enrolment and the API accepts the agreement, then check the resulting
    product on the account. Enable scheduled operation only after that succeeds.
 
-For local tests outside the container, install requirements, run `python -m invisible_playwright fetch`, then
+For local tests outside the container, run `python -m pip install --upgrade -r requirements.txt`,
+then `python -m invisible_playwright fetch` to fetch the matching browser engine, then
 run `python -m unittest discover -s tests -v`. The full requirements target Python 3.14.
 
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.
@@ -401,7 +398,7 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | `ONE_OFF`              | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                     |
 | `DRY_RUN`              | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                   |
 | `DEBUG` | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false. |
-| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Go, Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
+| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
 | `BATCH_NOTIFICATIONS`  | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                              |
 | `WEB_USERNAME`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
 | `WEB_PASSWORD`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
@@ -420,8 +417,8 @@ Below is a list of supported tariffs, their IDs (to use in environment variables
 | Flexible Octopus     | flexible   | ❌         |
 | Agile Octopus        | agile      | ✅         |
 | Cosy Octopus         | cosy       | ✅         |
-| Octopus Go           | go         | ✅         |
-| Octopus Go 12M Fixed | go-fix-12m | ✅         |
+| Octopus Go           | go         | ❌         |
+| Octopus Go 12M Fixed | go-fix-12m | ❌         |
 
 #### Setting up Apprise Notifications
 

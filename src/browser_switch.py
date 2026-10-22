@@ -17,7 +17,6 @@ from invisible_playwright import InvisiblePlaywright
 from invisible_playwright._pw.sync_api import Error as InvisiblePlaywrightError, expect
 from playwright.sync_api import Error
 
-from browser_runtime import new_browser_page
 from diagnostics import error_summary, is_navigation_context_error, log_failure
 from tariff import TARIFFS, Tariff
 
@@ -56,11 +55,9 @@ def log_stage(stage: str) -> str:
 class SignupFlow:
     slug: str
     option: str | None = None
-    require_terms: bool = False
 
 
 SIGNUP_FLOWS = {
-    "go": SignupFlow("go", require_terms=True),
     "agile": SignupFlow("agile"),
     "cosy": SignupFlow("cosy-octopus", option="Variable"),
 }
@@ -187,8 +184,7 @@ def select_cosy_variable(page) -> None:
         variable.click()
     # Allow the site's selection update to finish, but never infer success
     # from a click or from the URL's variant parameter alone.
-    # Invisible Playwright 0.25.7 does not implement text assertions. Poll
-    # the actual controls instead, with a bounded wait for React to update.
+    # Poll the actual controls with a bounded wait for React to update.
     deadline = time.monotonic() + COSY_SELECTION_TIMEOUT_SECONDS
     while True:
         try:
@@ -218,11 +214,7 @@ def prepare_signup(page, tariff: Tariff) -> dict:
     terms = page.get_by_role(
         "checkbox", name=re.compile(r"I accept.*Terms", re.IGNORECASE)
     )
-    if flow.require_terms:
-        terms.wait_for()
-        terms.check()
-        checks["terms_checked"] = terms.is_checked()
-    elif terms.count():
+    if terms.count():
         terms.check()
         checks["terms_checked"] = terms.is_checked()
     if tariff.id == "cosy":
@@ -252,9 +244,10 @@ def fill_login_field(page, selector: str, value: str, label: str) -> None:
         try:
             field.wait_for(state="visible", timeout=LOGIN_FIELD_TIMEOUT_MS)
             expect(field).to_be_editable(timeout=LOGIN_FIELD_TIMEOUT_MS)
-            # Invisible Playwright's fill() types character by character. Select
-            # the entire existing value and insert once, including on a retry.
-            field.press("ControlOrMeta+A", timeout=LOGIN_FIELD_TIMEOUT_MS)
+            # Select the full value through the public DOM API: select-all
+            # keyboard shortcuts can leave the selection empty in this driver.
+            # Insert once (fill() types character by character), also on retries.
+            field.evaluate("el => { el.focus(); el.select(); }")
             page.keyboard.insert_text(value)
             if field.input_value(timeout=LOGIN_FIELD_TIMEOUT_MS) != value:
                 raise RuntimeError(f"{label} entry was incomplete; login was not submitted")
@@ -377,7 +370,7 @@ def logged_in_page(account_number: str, email: str, password: str):
                     page = pages[0]
                 else:
                     step = log_stage("creating website browser page")
-                    page = new_browser_page(context)
+                    page = context.new_page()
                 # Viewport is the page's content area, not the physical monitor.
                 # Apply it to reused pages too, before any login navigation.
                 step = log_stage("setting website browser viewport")

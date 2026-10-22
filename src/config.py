@@ -2,7 +2,7 @@ import os
 
 #  The bot will declare its version in the welcome message.
 # Updated by the release pipeline. Change manually if building from source
-BOT_VERSION = "v2.0.9"
+BOT_VERSION = "v2.0.10"
 # Enable verbose application diagnostics in both the file and container logs.
 DEBUG = os.getenv("DEBUG", "false").strip().lower() in ["true", "1", "yes", "on"]
 # Add your stuff here
@@ -32,7 +32,7 @@ ONE_OFF_EXECUTED = False
 
 # Whether to notify the user of a switch but not actually switch
 DRY_RUN = os.getenv("DRY_RUN", "false") in ["true", "True", "1"]
-# On startup, check all three website signup flows once without submitting.
+# On startup, check the supported website signup flows once without submitting.
 # Takes precedence over comparisons, ONE_OFF and scheduled switching.
 TEST_PLAYWRIGHT = os.getenv("TEST_PLAYWRIGHT", "false").lower() in ["true", "1"]
 

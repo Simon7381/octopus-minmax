@@ -35,7 +35,7 @@ class BotOrchestrator:
     def start(self) -> None:
         if config.TEST_PLAYWRIGHT:
             logger.info(
-                "TEST_PLAYWRIGHT mode: checking Go, Agile and Cosy once. Switching and scheduling are disabled."
+                "TEST_PLAYWRIGHT mode: checking Agile and Cosy once. Switching and scheduling are disabled."
             )
             try:
                 results = run_playwright_checks(

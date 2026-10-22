@@ -1,3 +1,20 @@
+## v2.0.10 - v2.0.10
+## What's Changed
+
+* Use the latest stable Invisible Playwright release on fresh installs and uncached image builds; remove the fixed dependency version.
+* Remove the private 120-second page-creation timeout adapter and use the library's normal new-page API. Upstream now handles the original protocol timeout issue.
+* Select login input values through the public DOM API before whole-text insertion; the latest driver's select-all shortcut can leave partial values in place. Keep credential verification and submission guards.
+* Update local upgrade instructions and remove obsolete version references.
+* Make both `go` and `go-fix-12m` comparison-only, block API switching to comparison-only tariffs, and remove Go from website switching and startup checks.
+* Set the application and add-on release version to v2.0.10.
+
+## Validation
+* Dependency consistency check passed after upgrading the local environment to Invisible Playwright 0.41.0.
+* All 113 offline tests passed in the rebuilt Podman image, including login-field replacement, Go comparison eligibility and API switch rejection.
+* Live Podman checks verified fresh Octopus login, persistent-session reuse, and both remaining signup flows (Agile and Cosy Variable). No tariff switches or external notifications were submitted; the local compose switches were unchanged.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.9...v2.0.10
+
 ## v2.0.9 - v2.0.9
 ## What's Changed
 
@@ -32,7 +49,7 @@
 * Add a dashboard comparison preview with background progress and immediate PREVIEW notifications/logs. Use today's available consumption and configured tariffs without website login, switching, or changes to scheduled/one-off execution. Isolate comparison state and prevent overlapping previews; support Home Assistant ingress paths.
 * Write logs as UTF-8 so the WebUI can display pound signs in cost comparisons on Windows as well as Linux.
 * Allow 120 seconds, instead of 30, for Firefox's `Browser.newPage` protocol reply before website login. The existing login-field and page timeouts do not control this deadline.
-* Scope the compatibility adjustment to the current browser connection and restore it after page creation, including failures. Do not retry page creation or login submissions. Pin Invisible Playwright to 0.25.7 while its private transport adapter is required.
+* Scope the compatibility adjustment to the current browser connection and restore it after page creation, including failures. Do not retry page creation or login submissions. The dependency was temporarily pinned for this private adapter; both the pin and adapter have since been removed.
 
 ## Validation
 * All 104 tests passed in local Podman limited to half a CPU, 768 MiB RAM and 64 MiB shared memory, including a real Firefox page-creation reply delayed for 31 seconds. The original HA failure was not reproduced under these resource limits.

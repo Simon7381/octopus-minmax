@@ -161,6 +161,10 @@ class AccountManager:
 
     def initiate_tariff_switch(self, target_product_code: str) -> str | None:
         """Initiates the process of switching to a new electricity tariff."""
+        target = next((t for t in self.available_tariffs
+                       if t.product_code == target_product_code), None)
+        if target is not None and not target.switchable:
+            raise ValueError(f"Tariff '{target.id}' is comparison-only; switching is disabled")
         if not self.mpan:
             # Attempt to fetch account details if MPAN is not already set
             logger.info("MPAN not readily available, fetching account details first...")

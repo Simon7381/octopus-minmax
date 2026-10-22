@@ -126,14 +126,6 @@ class SignupControlsTests(unittest.TestCase):
                 self.assertEqual(field.input_value(), "synthetic@example.invalid")
                 self.assertEqual((Path(directory) / "playwright-test-failure.png").exists(), not fails)
 
-    def test_go_checks_displayed_terms_without_selecting_a_variant(self):
-        self.load(
-            '<label><input type="checkbox">I accept the <a href="/smart/terms-and-conditions/GO-FIX-12M-26-08-19/">Terms &amp; Conditions</a></label>'
-        )
-        prepare_signup(self.page, tariff("go", "GO-VAR-TEST"))
-        self.assertTrue(self.page.get_by_role("checkbox").is_checked())
-        self.assertIsNone(self.page.evaluate("window.submitted"))
-
     def test_agile_needs_only_switch_button(self):
         self.load("")
         prepare_signup(self.page, tariff("agile"))
@@ -261,14 +253,13 @@ class SignupControlsTests(unittest.TestCase):
                         self.assertTrue(self.page.evaluate('window.submitted'))
                         enrolment.assert_called_once()
 
-    def test_test_mode_checks_all_three_forms_without_submitting(self):
+    def test_test_mode_checks_switchable_forms_without_submitting(self):
         visited = []
 
         def open_fixture(page, target, account_number):
             self.assertIsNone(page.evaluate("window.submitted"))
             visited.append(target.id)
             fixtures = {
-                "go": '<label><input type="checkbox">I accept the Terms &amp; Conditions</label>',
                 "agile": "",
                 "cosy": '<label><input type="radio" name="plan" checked>Fixed</label><label><input type="radio" name="plan">Variable</label>',
             }
@@ -282,14 +273,14 @@ class SignupControlsTests(unittest.TestCase):
             results = run_playwright_checks(
                 "A-TEST", "user@example.invalid", "password"
             )
-        self.assertEqual(visited, ["go", "agile", "cosy"])
+        self.assertEqual(visited, ["agile", "cosy"])
         self.assertTrue(
             all(
                 result["passed"] and result["switch_button_ready"] for result in results
             )
         )
-        self.assertTrue(results[0]["terms_checked"])
-        self.assertTrue(results[2]["variable_selected"])
+        self.assertFalse(results[0]["terms_checked"])
+        self.assertTrue(results[1]["variable_selected"])
         self.assertIsNone(self.page.evaluate("window.submitted"))
 
 
@@ -347,7 +338,7 @@ class BrowserLifecycleTests(unittest.TestCase):
 
     def test_page_creation_failure_logs_stage_and_closes_browser(self):
         with patch("browser_switch.InvisiblePlaywright") as start:
-            context = Mock(spec=["new_page", "pages", "close", "_impl_obj"])
+            context = Mock(spec=["new_page", "pages", "close"])
             context.pages = []
             context.new_page.side_effect = InvisiblePlaywrightError(
                 "BrowserContext.new_page: Timeout 30000ms exceeded. password=secret-value"
@@ -362,6 +353,7 @@ class BrowserLifecycleTests(unittest.TestCase):
             self.assertIn("BrowserContext.new_page (timed out after 30000 ms)", output)
             self.assertIn("Browser runtime: invisible-playwright=", output)
             self.assertNotIn("secret-value", output)
+            context.new_page.assert_called_once_with()
             context.close.assert_not_called()
             start.return_value.__exit__.assert_called_once()
 
@@ -566,7 +558,6 @@ class BrowserLifecycleTests(unittest.TestCase):
                 "browser_switch.prepare_signup",
                 side_effect=[
                     RuntimeError("Failed"),
-                    {"terms_checked": False, "variable_selected": False},
                     {"terms_checked": False, "variable_selected": True},
                 ],
             ),
@@ -576,21 +567,18 @@ class BrowserLifecycleTests(unittest.TestCase):
             )
             page = login.return_value.__enter__.return_value
             self.assertEqual(
-                [result["passed"] for result in results], [False, True, True]
+                [result["passed"] for result in results], [False, True]
             )
             page.get_by_role.return_value.wait_for.assert_called_with(state="visible")
 
-    def test_fixed_go_has_no_browser_route(self):
-        with patch("browser_switch.InvisiblePlaywright") as launch:
-            with self.assertRaisesRegex(ValueError, "not supported.*go-fix-12m"):
-                initiate_browser_switch(
-                    tariff("go-fix-12m"),
-                    "A-TEST",
-                    "user@example.invalid",
-                    "password",
-                    Mock(),
-                )
-            launch.assert_not_called()
+    def test_go_variants_have_no_browser_route(self):
+        for identifier in ("go", "go-fix-12m"):
+            with self.subTest(tariff=identifier), patch("browser_switch.InvisiblePlaywright") as launch:
+                with self.assertRaisesRegex(ValueError, "not supported.*" + identifier):
+                    initiate_browser_switch(
+                        tariff(identifier), "A-TEST", "user@example.invalid", "password", Mock(),
+                    )
+                launch.assert_not_called()
 
     def test_missing_credentials_fail_before_launch(self):
         with patch("browser_switch.InvisiblePlaywright") as launch:
@@ -600,7 +588,6 @@ class BrowserLifecycleTests(unittest.TestCase):
 
     def test_enrolment_resolution_keeps_browser_alive_and_always_closes_it(self):
         for identifier, slug in [
-            ("go", "go"),
             ("agile", "agile"),
             ("cosy", "cosy-octopus"),
         ]:

@@ -50,7 +50,7 @@ class Tariff:
 
 TARIFFS = [
     Tariff(
-        "go", "Octopus Go", "Octopus Go", r"-go-var-", "go", True
+        "go", "Octopus Go", "Octopus Go", r"-go-var-", "go", False
     ),  # Octopus Go (Variable)
     Tariff(
         "go-fix-12m",
@@ -58,7 +58,7 @@ TARIFFS = [
         "Octopus Go 12M Fixed",
         r"-go-fix-",
         "go",
-        True,
+        False,
     ),
     Tariff(
         "agile", "Agile Octopus", "Agile Octopus", r"-agile-", "agile", True

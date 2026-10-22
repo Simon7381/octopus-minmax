@@ -18,7 +18,7 @@ class PlaywrightModeTests(unittest.TestCase):
                     patch("bot_orchestrator.NotificationService") as notifications, \
                     patch.object(BotOrchestrator, "_run_tariff_compare") as compare, \
                     patch("bot_orchestrator.time.sleep") as sleep:
-                check.return_value = [{"passed": True}] * 3
+                check.return_value = [{"passed": True}] * 2
                 if fails:
                     check.side_effect = RuntimeError("Login failed")
                 BotOrchestrator().start()

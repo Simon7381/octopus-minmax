@@ -1,5 +1,6 @@
 import sys
 import unittest
+from copy import copy
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from account_manager import AccountManager
 from query_service import GQLAuthorizationError, QueryService
-from tariff import Tariff
+from comparison_engine import ComparisonEngine, CostBreakdown, TariffComparison
+from tariff import TARIFFS, Tariff
 
 
 def enrolment(identifier, product="AGILE-TEST", status="IN_PROGRESS"):
@@ -25,25 +27,39 @@ class TariffSwitchTests(unittest.TestCase):
         self.manager.config = SimpleNamespace(ACC_NUMBER="A-TEST", OCTOPUS_LOGIN_EMAIL="test@example.invalid",
                                               OCTOPUS_LOGIN_PASSWD="test-password")
 
+    def test_both_go_variants_are_rejected_before_api_or_browser_work(self):
+        for identifier in ("go", "go-fix-12m"):
+            with self.subTest(tariff=identifier):
+                go = copy(next(t for t in TARIFFS if t.id == identifier))
+                go.product_code = "GO-TEST"
+                self.manager.available_tariffs = [go]
+                self.manager.mpan = None
+                with patch("account_manager.initiate_browser_switch") as browser:
+                    with self.assertRaisesRegex(ValueError, "comparison-only; switching is disabled"):
+                        self.manager.initiate_tariff_switch("GO-TEST")
+                    self.service.execute_gql_query.assert_not_called()
+                    browser.assert_not_called()
+
+    def test_cheaper_go_is_compared_but_never_selected_for_switching(self):
+        agile = next(t for t in TARIFFS if t.id == "agile")
+        go = next(t for t in TARIFFS if t.id == "go")
+        cosy = next(t for t in TARIFFS if t.id == "cosy")
+        engine = ComparisonEngine(self.service)
+        engine._calculate_current_cost = Mock(return_value=CostBreakdown(300, 0, 300, 1))
+        engine._compare_tariff = Mock(side_effect=[
+            TariffComparison(go, CostBreakdown(100, 0, 100, 1)),
+            TariffComparison(cosy, CostBreakdown(200, 0, 200, 1)),
+        ])
+        result = engine.compare_tariffs(SimpleNamespace(current_tariff=agile), [go, cosy])
+        self.assertEqual([c.tariff.id for c in result.all_comparisons], ["agile", "go", "cosy"])
+        self.assertEqual(result.cheapest_tariff.id, "cosy")
+        self.assertEqual(result.potential_savings, 100)
+
     def test_api_success_does_not_open_browser(self):
         self.service.execute_gql_query.return_value = {"startOnboardingProcess": {"productEnrolment": {"id": "api-id"}}}
         with patch("account_manager.initiate_browser_switch") as browser:
             self.assertEqual(self.manager.initiate_tariff_switch("AGILE-TEST"), "api-id")
             browser.assert_not_called()
-
-    def test_fixed_go_remains_available_via_api_only(self):
-        self.tariff.id = "go-fix-12m"
-        self.tariff.product_code = "GO-FIX-TEST"
-        self.service.execute_gql_query.side_effect = [
-            {"startOnboardingProcess": {"productEnrolment": {"id": "fixed-api-id"}}},
-            GQLAuthorizationError(),
-        ]
-        with patch("account_manager.initiate_browser_switch") as browser:
-            self.assertEqual(self.manager.initiate_tariff_switch("GO-FIX-TEST"), "fixed-api-id")
-            with self.assertRaisesRegex(ValueError, "GraphQL switching only"):
-                self.manager.initiate_tariff_switch("GO-FIX-TEST")
-            browser.assert_not_called()
-        self.assertEqual(self.service.execute_gql_query.call_count, 2)
 
     def test_failure_polls_exact_product_and_ignores_old_completed_entries(self):
         before = [enrolment("old", status="COMPLETED")]
