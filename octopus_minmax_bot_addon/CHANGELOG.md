@@ -1,3 +1,18 @@
+## v2.0.11a - v2.0.11a
+## What's Changed
+
+* Fix tomorrow's prediction when Agile's day-ahead publication ends at 23:00 UK time. Compare the same midnight–23:00 period across all tariffs when the final hour is unpublished, keeping one full daily standing charge per tariff.
+* Show the comparison period and partial-day coverage in prediction results, notifications and dashboard status. Use the full day when all rates are published; continue retrying missing earlier slots or incomplete late-evening publication.
+* Cover normal, summer and clock-change publication windows with regression tests, including gaps, cost calculations and scheduled completion.
+* Set the application, add-on and both READMEs to v2.0.11a.
+
+## Validation
+* All 153 tests passed locally, including browser tests against local fixtures.
+* All 31 prediction tests passed locally and in a temporary Python 3.14 Podman container.
+* A read-only public Octopus API check confirmed 46 rates for 27 October 2026, covering 00:00–23:00 GMT. A prediction using live public Agile and Cosy rates with fixture meter history completed for that same period.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.11...v2.0.11a
+
 ## v2.0.11 - v2.0.11
 ## What's Changed
 

@@ -1,5 +1,7 @@
 # Octopus Minmax Bot 🐙🤖
 
+Current release: **v2.0.11a**.
+
 ## Description
 
 This bot will use your electricity usage and compare your current Smart tariff costs for the day with another smart tariff and initiate a switch if it's cheaper. See below for supported tariffs.
@@ -42,14 +44,19 @@ authenticated meter consumption API, in kWh. The identical predicted half-hour
 profile is priced against each selected tariff's published VAT-inclusive unit
 rates and daily standing charge. No tariff switch is requested.
 
-Every half hour of tomorrow must have a published Agile rate. If any are missing,
-the scheduled prediction waits and retries every 30 minutes, retaining the original target
+Agile's day-ahead publication normally covers tomorrow only up to 23:00 UK time.
+When the final 23:00–midnight hour is unpublished, the prediction compares
+midnight–23:00 for **every** tariff (normally 46 half hours), includes one full
+daily standing charge, and clearly labels the result as a partial-day estimate.
+It uses the full calendar day when all rates are available. Missing rates earlier
+in the day or incomplete late-evening publication still cause
+the scheduled prediction to wait and retry every 30 minutes, retaining the original target
 date. The dashboard shows the number of available rates and the retry time; waiting
 updates go to the GUI and Logs, and the completed comparison is sent to your
 notification channel once rates are available. It never fills missing rates with old
 prices. A retry expires at the end of its target day; a new daily scheduled run
 replaces an older waiting prediction. Other failures report diagnostics instead
-of producing a partial comparison. Four complete source days are required;
+of producing a comparison with gaps. Four complete source days are required;
 missing consumption is never treated as zero.
 
 Choose **Run tomorrow’s prediction** in the WebUI to run it manually, including
@@ -62,7 +69,8 @@ retry. Daily prediction scheduling pauses in One-Off and Playwright test modes;
 manual one-time predictions remain available. Prediction work runs separately
 from the comparison/switch schedule.
 
-UK clock changes use the full local day (46 or 50 half hours when appropriate).
+UK clock changes use the correct local slots (46 or 50 half hours for a full day,
+44 or 48 when the unpublished final hour is excluded).
 Historical slots match local clock time, with each source day weighted equally:
 the repeated autumn hour is averaged within its day; the absent spring hour uses
 the other source days that contain that clock slot. Standing charges remain one
@@ -230,9 +238,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.11` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.11a` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.11` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.11a` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 

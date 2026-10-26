@@ -33,6 +33,7 @@ class FixtureAPI:
         self.target = target
         self.requests = []
         self.missing_rate = False
+        self.unpublished_final_hour = False
         self.gap = False
         self.bad_consumption = None
         self.paginate = False
@@ -86,6 +87,8 @@ class FixtureAPI:
                 slots = day_slots(self.target)
                 values = [rate(slot, slot + HALF_HOUR, -2 if index == 0 else 10)
                           for index, slot in enumerate(slots)]
+                if self.unpublished_final_hour:
+                    values = values[:-2]
                 if self.missing_rate:
                     values.pop()
                 return {"results": values}
@@ -111,6 +114,8 @@ class PredictionEngineTests(unittest.TestCase):
         self.assertEqual(payload["slots"][0]["rates_pence"], {"agile": -2, "cosy": 5})
         self.assertEqual(payload["slots"][1]["rates_pence"]["cosy"], 20)
         self.assertIn("Estimated cheapest", result.summary())
+        self.assertTrue(payload["is_full_day"])
+        self.assertEqual(payload["period_to"], "2026-10-28T00:00:00+00:00")
         self.assertTrue(all("period_from=" in url for url, _ in api.requests if "/consumption/" in url))
 
     def test_each_half_hour_uses_its_own_history_instead_of_daily_total(self):
@@ -134,6 +139,70 @@ class PredictionEngineTests(unittest.TestCase):
         with self.assertRaises(RatesNotPublished):
             PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
         self.assertFalse(any("/consumption/" in url or "/COSY/" in url for url, _ in api.requests))
+
+    def test_published_46_slot_day_compares_identical_periods_and_reports_coverage(self):
+        api = FixtureAPI()
+        api.unpublished_final_hour = True
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        payload = result.as_dict()
+        self.assertEqual(payload["slot_count"], 46)
+        self.assertEqual(payload["day_slot_count"], 48)
+        self.assertFalse(payload["is_full_day"])
+        self.assertEqual(payload["period_from"], "2026-10-27T00:00:00+00:00")
+        self.assertEqual(payload["period_to"], "2026-10-27T23:00:00+00:00")
+        self.assertEqual(payload["total_kwh"], 115)
+        by_id = {entry.tariff.id: entry.cost_breakdown for entry in result.comparisons}
+        self.assertEqual(by_id["agile"].total_cost, 2.5 * (-2 + 45 * 10) + 40)
+        self.assertEqual(by_id["cosy"].total_cost, 2.5 * (5 + 45 * 20) + 40)
+        self.assertIn("Partial-day estimate: 46 of 48", result.summary())
+        self.assertIn("final hour has no published Agile rates", result.summary())
+        self.assertIn("one full daily standing charge", result.summary())
+
+    def test_gaps_or_shorter_publication_are_not_accepted_as_complete(self):
+        for unpublished_final_hour, removed in ((False, (0, 1)), (False, (20, 21)),
+                                                (True, (20,)), (True, (44, 45))):
+            with self.subTest(unpublished_final_hour=unpublished_final_hour, removed=removed):
+                api = FixtureAPI()
+                api.unpublished_final_hour = unpublished_final_hour
+                original = api.execute_rest_query
+
+                def query(url, **kwargs):
+                    response = original(url, **kwargs)
+                    if "/AGILE/units/" in url:
+                        response["results"] = [entry for index, entry in enumerate(response["results"])
+                                               if index not in removed]
+                    return response
+
+                api.execute_rest_query = query
+                with self.assertRaisesRegex(RatesNotPublished, "of 46 half hours before 23:00"):
+                    PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+                self.assertFalse(any("/consumption/" in url for url, _ in api.requests))
+
+    def test_unpublished_final_hour_respects_dst_and_summer_time(self):
+        for target, count in ((date(2026, 3, 29), 44), (date(2026, 10, 25), 48),
+                              (date(2026, 7, 21), 46)):
+            with self.subTest(target=target):
+                api = FixtureAPI(target)
+                api.unpublished_final_hour = True
+                result = PredictionEngine(api).predict("A-TEST", target, "agile,cosy")
+                self.assertEqual(len(result.profile), count)
+                self.assertEqual(datetime.fromisoformat(result.as_dict()["period_to"]).hour, 23)
+                self.assertEqual(result.as_dict()["day_slot_count"], count + 2)
+
+    def test_other_tariffs_only_need_unit_rates_for_the_compared_period(self):
+        api = FixtureAPI()
+        api.unpublished_final_hour = True
+        original = api.execute_rest_query
+
+        def query(url, **kwargs):
+            response = original(url, **kwargs)
+            if "/COSY/units/" in url:
+                response["results"][-1]["valid_to"] = day_slots(TARGET)[-2].isoformat()
+            return response
+
+        api.execute_rest_query = query
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(len(result.profile), 46)
 
     def test_incomplete_history_is_not_treated_as_zero_usage(self):
         api = FixtureAPI()
@@ -354,6 +423,28 @@ class PredictionWorkerTests(unittest.TestCase):
         self.assertEqual(self.worker.status()["result"]["total_kwh"], 120)
         self.assertIn("PREDICTION", ns.return_value.send_notification.call_args.args[0])
         self.assertFalse(ns.return_value.send_notification.call_args.kwargs["batchable"])
+
+    def test_partial_day_success_reports_coverage_in_dashboard_and_notification(self):
+        api = FixtureAPI()
+        api.unpublished_final_hour = True
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        with patch("prediction_preview.QueryService"), patch("prediction_preview.PredictionEngine") as engine, \
+                patch("prediction_preview.NotificationService") as ns, \
+                patch.object(web_server, "prediction_preview", self.worker):
+            engine.return_value.predict.return_value = result
+            self.worker._scheduled_target_date = TARGET
+            self.worker._next_retry = datetime(2026, 10, 26, 21, 30, tzinfo=UTC)
+            self.worker._run(TARGET, ("key", "url", "account", "agile,cosy"), scheduled=True)
+            client = web_server.app.test_client()
+            headers = {"X-Ingress-Path": "/api/hassio_ingress/test"}
+            status = client.get("/prediction-status", headers=headers).json
+            self.assertEqual(status["state"], "complete")
+            self.assertIsNone(self.worker._next_retry)
+            self.assertFalse(status["result"]["is_full_day"])
+            self.assertIn("46 of 48", status["message"])
+            self.assertIn(b"unpublished final hour", client.get("/", headers=headers).data)
+            ns.return_value.send_notification.assert_called_once()
+            self.assertIn("Partial-day estimate: 46 of 48", ns.return_value.send_notification.call_args.args[0])
 
     def test_failures_are_visible_and_raw_api_errors_are_not_exposed(self):
         for error, expected in ((RuntimeError("private-api-key"), "See Logs"),

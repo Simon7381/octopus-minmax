@@ -20,7 +20,7 @@ class PredictionError(ValueError):
 
 
 class RatesNotPublished(PredictionError):
-    """Agile does not yet cover the entire target day."""
+    """Agile does not yet cover the expected day-ahead publication period."""
 
 
 def prediction_tariffs(value):
@@ -80,11 +80,16 @@ class PredictionResult:
         ranked = sorted(self.comparisons, key=lambda entry: entry.total_cost)
         best = ranked[0]
         saving = ranked[1].total_cost - best.total_cost if len(ranked) > 1 else 0
+        day_slot_count = len(day_slots(self.target_date))
         return {
             "target_date": self.target_date.isoformat(),
             "source_dates": [day.isoformat() for day in self.source_dates],
             "total_kwh": sum(slot["kwh"] for slot in self.profile),
             "slot_count": len(self.profile),
+            "day_slot_count": day_slot_count,
+            "is_full_day": len(self.profile) == day_slot_count,
+            "period_from": self.profile[0]["start"].astimezone(LONDON).isoformat(),
+            "period_to": (self.profile[-1]["start"] + HALF_HOUR).astimezone(LONDON).isoformat(),
             "best_tariff": best.tariff.display_name,
             "saving_pounds": saving / 100,
             "comparisons": [
@@ -106,6 +111,13 @@ class PredictionResult:
         lines = [f"PREDICTION — {self.target_date:%A %d %B %Y} (Europe/London)",
                  "Source days: " + ", ".join(day.isoformat() for day in self.source_dates),
                  f"Estimated consumption: {result['total_kwh']:.3f} kWh across {result['slot_count']} half hours."]
+        start = self.profile[0]["start"].astimezone(LONDON)
+        end = (self.profile[-1]["start"] + HALF_HOUR).astimezone(LONDON)
+        lines.append(f"Comparison period: {start:%Y-%m-%d %H:%M %Z} to {end:%Y-%m-%d %H:%M %Z}.")
+        if not result["is_full_day"]:
+            lines.append(f"Partial-day estimate: {result['slot_count']} of {result['day_slot_count']} half hours. "
+                         "The final hour has no published Agile rates and is excluded from every tariff.")
+        lines.append("Includes one full daily standing charge for each tariff.")
         for entry in result["comparisons"]:
             lines.append(f"{entry['tariff']}: £{entry['total_pounds']:.2f} "
                          f"(£{entry['usage_pounds']:.2f} usage + £{entry['standing_pounds']:.2f} standing charge)")
@@ -217,7 +229,7 @@ class PredictionEngine:
             raise PredictionError("Octopus returned conflicting rates for a half hour.")
         return next(iter(values)) if values else None
 
-    def _rates(self, tariff, region, day, products):
+    def _rates(self, tariff, region, day, products, *, slots=None):
         matching = [product for product in products
                     if product.get("display_name") == tariff.api_display_name
                     and product.get("direction") == "IMPORT"]
@@ -233,13 +245,27 @@ class PredictionEngine:
         if "standard_unit_rates" not in links or "standing_charges" not in links:
             raise PredictionError(f"Rate links are unavailable for {tariff.display_name}.")
         units = self._pages(self._period_url(links["standard_unit_rates"], day))
-        unit_prices = [self._rate_at(units, start, start + HALF_HOUR) for start in day_slots(day)]
+        slots = day_slots(day) if slots is None else slots
+        unit_prices = [self._rate_at(units, start, start + HALF_HOUR) for start in slots]
         if any(price is None for price in unit_prices):
             if tariff.id == "agile":
-                published = sum(price is not None for price in unit_prices)
-                raise RatesNotPublished(f"Agile rates for {day} are not yet fully available "
-                                        f"({published} of {len(unit_prices)} half hours).")
-            raise PredictionError(f"Rates for {tariff.display_name} do not cover the full prediction day.")
+                # Day-ahead Agile publication ends at 23:00 UK time. Accept
+                # only that exact trailing hour being absent, never gaps or
+                # an arbitrary subset of rates. Keep a full day when available.
+                cutoff = datetime.combine(day, time(23), LONDON).astimezone(UTC)
+                expected_count = sum(start < cutoff for start in slots)
+                if (all(price is not None for price in unit_prices[:expected_count])
+                        and all(price is None for price in unit_prices[expected_count:])):
+                    unit_prices = unit_prices[:expected_count]
+                else:
+                    published = sum(price is not None for price in unit_prices[:expected_count])
+                    if published == expected_count:
+                        raise RatesNotPublished(f"Agile rates for {day} have incomplete late-evening coverage. "
+                                                "Expected rates through 23:00 Europe/London or the full day.")
+                    raise RatesNotPublished(f"Agile rates for {day} are not yet fully available "
+                                            f"({published} of {expected_count} half hours before 23:00 Europe/London).")
+            else:
+                raise PredictionError(f"Rates for {tariff.display_name} do not cover the full prediction period.")
         standing = self._pages(self._period_url(links["standing_charges"], day))
         standing_prices = [self._rate_at(standing, start, start + HALF_HOUR) for start in day_slots(day)]
         if any(price is None for price in standing_prices):
@@ -250,12 +276,14 @@ class PredictionEngine:
         tariffs = prediction_tariffs(tariff_ids)
         mpan, serials, region = self._meter(account_number)
         products = self._pages(f"{self.base_url}/products/?brand=OCTOPUS_ENERGY&is_business=false")
-        # Check Agile coverage before downloading historical usage or pricing others.
+        # Check Agile publication before downloading historical usage or pricing others.
         tariffs.sort(key=lambda tariff: tariff.id != "agile")
         rates = {tariffs[0].id: self._rates(tariffs[0], region, target_date, products)}
         source_dates, profile = self._profile(mpan, serials, target_date)
+        profile = profile[:len(rates[tariffs[0].id][0])]
         for tariff in tariffs[1:]:
-            rates[tariff.id] = self._rates(tariff, region, target_date, products)
+            rates[tariff.id] = self._rates(tariff, region, target_date, products,
+                                          slots=[slot["start"] for slot in profile])
         comparisons = []
         total_kwh = sum(slot["kwh"] for slot in profile)
         for index, slot in enumerate(profile):

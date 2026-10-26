@@ -88,6 +88,10 @@ class PredictionPreview:
                 if scheduled and self._scheduled_target_date == target_date:
                     self._scheduled_target_date, self._next_retry = None, None
                 self._message = "Prediction complete. View the results in Logs or your configured notification channel."
+                if not payload["is_full_day"]:
+                    self._message += (f" Partial-day comparison: {payload['slot_count']} of {payload['day_slot_count']} "
+                                      "half hours (00:00–23:00 Europe/London). The unpublished final hour is "
+                                      "excluded from every tariff; includes one full daily standing charge.")
             notifications.send_notification(summary, title="Octobot prediction", batchable=False)
 
     def tick(self, now=None):
