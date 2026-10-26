@@ -30,39 +30,50 @@ This uses consumption received so far today, not a forecast of the full day's co
 
 ### Tomorrow's tariff prediction
 
-Configure `PREDICTION_TIME: "21:00"` and `PREDICTION_TARIFFS: "agile,cosy"` in
-the add-on options. `agile` must be included. Times use Europe/London.
+Set `PREDICTION_TIME: "21:00"` and `PREDICTION_TARIFFS: "agile,cosy"` in the
+Home Assistant add-on options (or the equivalent container environment variables).
+`agile` is required; the prediction list is independent of `TARIFFS`. You can
+also change these settings temporarily through Configuration.
 
-The prediction averages each half hour of the previous four matching weekdays
-using Octopus's authenticated meter consumption API. It applies tomorrow's
-published half-hourly prices to that same usage profile for every selected tariff,
-including VAT and the daily standing charge, and reports the estimated cheapest.
-It never switches tariffs.
+At the configured Europe/London time, the bot predicts tomorrow's usage by
+averaging each half hour from the previous four matching weekdays: for a Tuesday,
+the four previous Tuesdays. Historical readings come directly from Octopus's
+authenticated meter consumption API, in kWh. The identical predicted half-hour
+profile is priced against each selected tariff's published VAT-inclusive unit
+rates and daily standing charge. No tariff switch is requested.
 
-Incomplete Agile rates are shown in the GUI with an available-slot count.
-Scheduled predictions retry every 30 minutes for the original target date and
-show their next retry time. The manual button checks once and reports unavailable
-rates without starting a retry loop or altering pending scheduled retries. Routine waiting
-updates stay in the GUI and Logs; the completed comparison is sent through your
-notification channel when rates become available.
-A new daily run replaces an older waiting prediction; retries expire at the
-end of their target day. Four complete source weekdays are required. Missing
-readings or other incomplete tariff data produce a clear failure instead of a
-partial estimate. Clock changes use the full 46/50-slot local day: repeated
-historical clock slots are averaged within their day, and missing spring clock
-slots use the other source days.
+Every half hour of tomorrow must have a published Agile rate. If any are missing,
+the scheduled prediction waits and retries every 30 minutes, retaining the original target
+date. The dashboard shows the number of available rates and the retry time; waiting
+updates go to the GUI and Logs, and the completed comparison is sent to your
+notification channel once rates are available. It never fills missing rates with old
+prices. A retry expires at the end of its target day; a new daily scheduled run
+replaces an older waiting prediction. Other failures report diagnostics instead
+of producing a partial comparison. Four complete source days are required;
+missing consumption is never treated as zero.
 
-In the WebUI, select **Run tomorrow’s prediction**. The GUI shows running,
-unavailable, or completed status. Calculated predictions show the source dates,
-estimated kWh and tariff totals in Logs and your configured `NOTIFICATION_URLS`,
-immediately even with notification batching enabled. Daily scheduling pauses
-in One-Off and Playwright test modes; manual one-time predictions remain
-available. Predictions run independently of normal comparison scheduling.
+Choose **Run tomorrow’s prediction** in the WebUI to run it manually, including
+when using Home Assistant ingress. The GUI reports whether the prediction is
+running, complete, or unavailable. Calculated results appear in Logs and your
+configured `NOTIFICATION_URLS` immediately, even with batching enabled. The
+manual button makes one attempt and reports when rates are
+not yet available; it never starts a retry loop or changes a pending scheduled
+retry. Daily prediction scheduling pauses in One-Off and Playwright test modes;
+manual one-time predictions remain available. Prediction work runs separately
+from the comparison/switch schedule.
 
-For a Home Assistant Template Button helper, send
-`{"command": "prediction_preview"}` using Supervisor's “Write data to app stdin”
-action. Use the same add-on selection as the comparison preview button below.
-See the [prediction button YAML](https://github.com/Simon7381/octopus-minmax/blob/main/home_assistant/prediction_preview.yaml).
+UK clock changes use the full local day (46 or 50 half hours when appropriate).
+Historical slots match local clock time, with each source day weighted equally:
+the repeated autumn hour is averaged within its day; the absent spring hour uses
+the other source days that contain that clock slot. Standing charges remain one
+daily charge.
+
+For a native Home Assistant Template Button, use Supervisor's stdin action with
+`{"command": "prediction_preview"}`. See
+[the prediction button example](home_assistant/prediction_preview.yaml).
+It shares the same prediction worker and status as the WebUI.
+
+API field and interval semantics follow [Octopus's REST endpoint documentation](https://docs.octopus.energy/rest/guides/endpoints/).
 
 ## How to Use
 
@@ -118,6 +129,7 @@ do not start another comparison. There is no on/off state to reset.
    `/info`). On older HA versions, use `hassio.addon_stdin` and replace the
    `app:` key with `addon:`. This uses Supervisor and requires an HA administrator
    account; it does not require MQTT or access to the bot's HTTP port.
+
 3. Save the helper. In its entity settings, assign an area if wanted and confirm
    its entity ID is `button.octopus_minmax_comparison_preview` (adjust the card
    below if yours differs).
@@ -243,8 +255,13 @@ The reports directory is excluded from Git and the image build context.
 The bot first tries the tariff initiation API. If it fails, it signs in to the Octopus
 website using `OCTOPUS_LOGIN_EMAIL` and `OCTOPUS_LOGIN_PASSWD`. Permission error
 `KT-CT-1111` triggers the fallback immediately. Other API failures retain the existing
-retry policy. Agreement acceptance continues through the API unless Octopus has
-already completed the new enrolment on the website.
+retry policy. Before accepting an agreement through the API, the bot opens the
+configured account's email history and the first message starting with
+`Action: Accept our terms and conditions`. It follows that email's
+`accept the terms and conditions` link only when it matches the account and current enrolment, then
+checks the enrolment for completion. Missing credentials, missing or outdated
+emails, browser failures, or unconfirmed acceptance fall back to the existing API.
+Enrolments already completed on the website skip acceptance.
 
 On startup, after the mode and dashboard notification, the bot warms the browser
 login when the account number and website credentials are configured. It verifies
@@ -265,10 +282,10 @@ not an exact GPU match or GPU passthrough. These settings apply to startup login
 `TEST_PLAYWRIGHT` and website switches; adjust the constants in `browser_switch.py`
 if the testing desktop changes. See [Invisible Playwright pinning](https://github.com/feder-cr/invisible_playwright/blob/main/docs/pinning.md).
 
-| Tariff ID | Signup path    | Website action                                                           |
-| --------- | -------------- | ------------------------------------------------------------------------ |
-| `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                |
-| `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                             |
+| Tariff ID | Signup path    | Website action                                                                                                          |
+| --------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                                                               |
+| `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                                                                            |
 | `cosy`    | `cosy-octopus` | Open `sign-up/new/` with `variant=VARIABLE`; verify Variable is selected and Fixed is not selected before Switch Tariff |
 
 Each path opens `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`
@@ -410,8 +427,9 @@ browser session or an Octopus login flow that does not challenge automation is r
    stopping before Switch Tariff. The automated fixtures model the reported controls;
    they cannot prove the current live page structure or account eligibility.
 6. Run one supervised live switch with `DRY_RUN=false`, confirm the fallback finds
-   the correct enrolment and the API accepts the agreement, then check the resulting
-   product on the account. Enable scheduled operation only after that succeeds.
+   the correct enrolment and accepts the agreement through its email link (or API
+   fallback), then check the resulting product on the account. Enable scheduled
+   operation only after that succeeds.
 
 For local tests outside the container, run `python -m pip install --upgrade -r requirements.txt`,
 then `python -m invisible_playwright fetch` to fetch the matching browser engine, then
@@ -425,16 +443,16 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ACC_NUMBER`           | Your Octopus Energy account number.                                                                                                                                                                                    |
 | `API_KEY`              | API token for accessing your Octopus Energy account.                                                                                                                                                                   |
-| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, required when API tariff initiation fails.                                                                                                                                                      |
-| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, required when API tariff initiation fails.                                                                                                                                                   |
+| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                       |
+| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                    |
 | `TARIFFS`              | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                     |
 | `EXECUTION_TIME`       | (Optional) The time (HH:MM) when the script should execute. Default is `23:30` (11 PM).                                                                                                                                |
 | `SWITCH_THRESHOLD`     | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p).                                                                                                                             |
 | `NOTIFICATION_URLS`    | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates. See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
 | `ONE_OFF`              | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                     |
 | `DRY_RUN`              | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                   |
-| `DEBUG` | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false. |
-| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
+| `DEBUG`                | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false.                                                                            |
+| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                                 |
 | `BATCH_NOTIFICATIONS`  | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                              |
 | `WEB_USERNAME`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
 | `WEB_PASSWORD`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
