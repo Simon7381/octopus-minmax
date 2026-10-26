@@ -207,8 +207,13 @@ The reports directory is excluded from Git and the image build context.
 The bot first tries the tariff initiation API. If it fails, it signs in to the Octopus
 website using `OCTOPUS_LOGIN_EMAIL` and `OCTOPUS_LOGIN_PASSWD`. Permission error
 `KT-CT-1111` triggers the fallback immediately. Other API failures retain the existing
-retry policy. Agreement acceptance continues through the API unless Octopus has
-already completed the new enrolment on the website.
+retry policy. Before accepting an agreement through the API, the bot opens the
+configured account's email history and the first message starting with
+`Action: Accept our terms and conditions`. It follows that email's
+`accept the terms and conditions` link only when it matches the account and current enrolment, then
+checks the enrolment for completion. Missing credentials, missing or outdated
+emails, browser failures, or unconfirmed acceptance fall back to the existing API.
+Enrolments already completed on the website skip acceptance.
 
 On startup, after the mode and dashboard notification, the bot warms the browser
 login when the account number and website credentials are configured. It verifies
@@ -374,8 +379,9 @@ browser session or an Octopus login flow that does not challenge automation is r
    stopping before Switch Tariff. The automated fixtures model the reported controls;
    they cannot prove the current live page structure or account eligibility.
 6. Run one supervised live switch with `DRY_RUN=false`, confirm the fallback finds
-   the correct enrolment and the API accepts the agreement, then check the resulting
-   product on the account. Enable scheduled operation only after that succeeds.
+   the correct enrolment and accepts the agreement through its email link (or API
+   fallback), then check the resulting product on the account. Enable scheduled
+   operation only after that succeeds.
 
 For local tests outside the container, run `python -m pip install --upgrade -r requirements.txt`,
 then `python -m invisible_playwright fetch` to fetch the matching browser engine, then
@@ -389,8 +395,8 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ACC_NUMBER`           | Your Octopus Energy account number.                                                                                                                                                                                    |
 | `API_KEY`              | API token for accessing your Octopus Energy account.                                                                                                                                                                   |
-| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, required when API tariff initiation fails.                                                                                                                                                      |
-| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, required when API tariff initiation fails.                                                                                                                                                   |
+| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                                                      |
+| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                                                   |
 | `TARIFFS`              | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                     |
 | `EXECUTION_TIME`       | (Optional) The time (HH:MM) when the script should execute. Default is `23:30` (11 PM).                                                                                                                                |
 | `SWITCH_THRESHOLD`     | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p).                                                                                                                             |

@@ -108,13 +108,63 @@ class TariffSwitchTests(unittest.TestCase):
         self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", identifier), "already accepted on website")
         self.service.execute_gql_query.assert_not_called()
 
-    def test_normal_agreement_acceptance_uses_api(self):
+    def test_browser_agreement_failure_falls_back_to_existing_api(self):
         self.service.execute_gql_query.side_effect = [{"termsAndConditionsForProduct": {"version": "2.3"}},
                                                       {"acceptTermsAndConditions": {"acceptedVersion": "2.3"}}]
-        self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "2.3")
+        def fail_browser(*args):
+            self.service.execute_gql_query.assert_not_called()
+            raise RuntimeError("Browser failed")
+
+        with patch("account_manager.accept_agreement_in_browser", side_effect=fail_browser) as browser:
+            self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "2.3")
+        self.assertEqual(browser.call_args.args[:4],
+                         ("A-TEST", "test@example.invalid", "test-password", "new"))
         query = self.service.execute_gql_query.call_args.args[0]
         self.assertIn('enrolmentId: "new"', query)
         self.assertIn('versionMajor: 2', query)
+
+    def test_email_agreement_acceptance_is_verified_and_cached(self):
+        for completed_stage in (False, True):
+            with self.subTest(completed_stage=completed_stage):
+                self.manager._website_accepted_enrolments.clear()
+                entry = enrolment("new", status="COMPLETED" if not completed_stage else "IN_PROGRESS")
+                if completed_stage:
+                    entry["stages"] = [{"name": "post-enrolment", "status": "COMPLETED"}]
+                self.service.execute_gql_query.side_effect = [
+                    {"productEnrolments": [enrolment("new")]}, {"productEnrolments": [entry]},
+                ]
+                with patch("account_manager.accept_agreement_in_browser", side_effect=lambda *args: args[-1]()) as browser, \
+                        patch("account_manager.time.sleep") as sleep:
+                    self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "accepted on website")
+                    self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "already accepted on website")
+                    browser.assert_called_once()
+                    sleep.assert_called_once_with(5)
+                self.assertTrue(all("mutation" not in call.args[0]
+                                    for call in self.service.execute_gql_query.call_args_list))
+
+    def test_unverified_browser_acceptance_falls_back_to_api(self):
+        # Neither a completed different enrolment nor the same ID on a different
+        # product confirms acceptance of the requested agreement.
+        entries = [enrolment("other", status="COMPLETED"),
+                   enrolment("new", product="COSY-TEST", status="COMPLETED")]
+        self.service.execute_gql_query.side_effect = [{"productEnrolments": entries}] * 7 + [
+            {"termsAndConditionsForProduct": {"version": "2.3"}},
+            {"acceptTermsAndConditions": {"acceptedVersion": "2.3"}},
+        ]
+        with patch("account_manager.accept_agreement_in_browser", side_effect=lambda *args: args[-1]()), \
+                patch("account_manager.time.sleep") as sleep:
+            self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "2.3")
+        self.assertEqual(sleep.call_count, 6)
+        self.assertNotIn(("AGILE-TEST", "new"), self.manager._website_accepted_enrolments)
+        self.assertIn("acceptTermsAndConditions", self.service.execute_gql_query.call_args.args[0])
+
+    def test_browser_acceptance_verification_error_falls_back_to_api(self):
+        self.service.execute_gql_query.side_effect = [RuntimeError("Cannot query enrolments"),
+            {"termsAndConditionsForProduct": {"version": "2.3"}},
+            {"acceptTermsAndConditions": {"acceptedVersion": "2.3"}},
+        ]
+        with patch("account_manager.accept_agreement_in_browser", side_effect=lambda *args: args[-1]()):
+            self.assertEqual(self.manager.accept_new_agreement("AGILE-TEST", "new"), "2.3")
 
     def test_completed_post_enrolment_skips_acceptance_even_if_status_lags(self):
         entry = enrolment("done")

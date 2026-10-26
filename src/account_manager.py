@@ -5,7 +5,7 @@ from typing import Optional
 
 import config
 from account_info import AccountInfo
-from browser_switch import SIGNUP_FLOWS, initiate_browser_switch
+from browser_switch import SIGNUP_FLOWS, accept_agreement_in_browser, initiate_browser_switch
 from queries import (
     accept_terms_query,
     account_query,
@@ -304,6 +304,45 @@ class AccountManager:
         logger.info("Checking agreement acceptance for %s.", product_code)
         if (product_code, enrolment_id) in self._website_accepted_enrolments:
             return "already accepted on website"
+
+        def verify_acceptance():
+            for attempt in range(7):
+                for entry in self._fetch_enrolments():
+                    if (
+                        str(entry.get("id")) == str(enrolment_id)
+                        and (entry.get("product") or {}).get("code") == product_code
+                        and (
+                            entry.get("status") == "COMPLETED"
+                            or any(
+                                stage.get("name") == "post-enrolment"
+                                and stage.get("status") == "COMPLETED"
+                                for stage in (entry.get("stages") or [])
+                            )
+                        )
+                    ):
+                        return
+                if attempt < 6:
+                    time.sleep(5)
+            raise RuntimeError("Website agreement acceptance could not be verified within 30 seconds")
+
+        try:
+            logger.info("Trying website email agreement acceptance for %s.", product_code)
+            accept_agreement_in_browser(
+                self.config.ACC_NUMBER,
+                self.config.OCTOPUS_LOGIN_EMAIL,
+                self.config.OCTOPUS_LOGIN_PASSWD,
+                enrolment_id,
+                verify_acceptance,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Website agreement acceptance failed (%s); falling back to API for %s.",
+                type(exc).__name__, product_code,
+            )
+        else:
+            self._website_accepted_enrolments.add((product_code, enrolment_id))
+            return "accepted on website"
+
         # get terms and conditions version
         version = self._get_agreement_terms_version(product_code)
         # accept terms and conditions

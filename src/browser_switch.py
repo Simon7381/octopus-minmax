@@ -1,4 +1,4 @@
-"""Website fallback for tariff initiation; agreement acceptance stays in the API."""
+"""Website tariff initiation and email-based agreement acceptance."""
 
 import logging
 import platform
@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 from uuid import uuid4
 
 from invisible_playwright import InvisiblePlaywright
@@ -40,6 +40,7 @@ DESKTOP_HARDWARE_PINS = {
 }
 LOGIN_FIELD_TIMEOUT_MS = 120_000
 COSY_SELECTION_TIMEOUT_SECONDS = 30
+AGREEMENT_EMAIL_LINK_TIMEOUT_SECONDS = 30
 CREDENTIAL_MASK_SELECTOR = (
     'input[type="password"], input[type="email"], '
     '#id_auth-username, #id_auth-password, input[autocomplete="username"]'
@@ -414,6 +415,82 @@ def open_signup(page, tariff: Tariff, account_number: str) -> None:
     page.goto(
         f"https://octopus.energy/smart/{slug}/{path}?{urlencode(query)}"
     )
+
+
+def accept_agreement_in_browser(
+    account_number: str,
+    email: str,
+    password: str,
+    enrolment_id: str,
+    verify_acceptance: Callable[[], None],
+) -> None:
+    """Follow the newest terms email's link, then verify the target enrolment."""
+    if not account_number or not email or not password:
+        raise RuntimeError(
+            "Website agreement acceptance requires ACC_NUMBER, OCTOPUS_LOGIN_EMAIL and OCTOPUS_LOGIN_PASSWD"
+        )
+    with logged_in_page(account_number, email, password) as page:
+        stage = log_stage("opening account email history")
+        try:
+            page.goto(f"https://octopus.energy/dashboard/new/accounts/{account_number}/messages")
+            stage = log_stage("opening first terms acceptance email")
+            subject = page.get_by_text(
+                re.compile(r"^\s*Action: Accept our terms and conditions\b", re.I)
+            ).first
+            subject.wait_for(state="visible")
+            card = subject.locator(
+                "xpath=ancestor::*[.//a[normalize-space(.)='View email'] "
+                "or .//button[normalize-space(.)='View email']][1]"
+            )
+            card.locator("a, button").filter(
+                has_text=re.compile(r"^\s*View email\s*$", re.I)
+            ).click()
+
+            stage = log_stage("finding terms acceptance link in email")
+            # Email bodies may be rendered directly or in an iframe. Wait for
+            # either without ever searching older matching messages.
+            deadline = time.monotonic() + AGREEMENT_EMAIL_LINK_TIMEOUT_SECONDS
+            acceptance_url = None
+            while acceptance_url is None:
+                for frame in page.frames:
+                    link = frame.get_by_role(
+                        "link", name=re.compile(r"^\s*accept the terms and conditions\s*$", re.I)
+                    )
+                    if link.count():
+                        if link.count() != 1:
+                            raise RuntimeError("Terms email contains ambiguous acceptance links")
+                        acceptance_url = urljoin(frame.url, link.get_attribute("href") or "")
+                        break
+                if acceptance_url is None:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("Terms email contains no acceptance link")
+                    page.wait_for_timeout(250)
+
+            # Never follow an old email's link for another enrolment/account.
+            # Keep the presigned key and the full URL out of all log messages.
+            target = urlsplit(acceptance_url)
+            params = parse_qs(target.query)
+            if (
+                target.scheme != "https"
+                or target.netloc != "octopus.energy"
+                or target.path.rstrip("/") != "/smart/accept"
+                or params.get("accountNumber") != [account_number]
+                or params.get("enrolmentId") != [str(enrolment_id)]
+                or len(params.get("preSignedKey", [])) != 1
+            ):
+                raise RuntimeError("Terms acceptance link does not match the configured account and enrolment")
+            stage = log_stage("following terms acceptance link")
+            response = page.goto(acceptance_url)
+            if response is not None and response.status >= 400:
+                raise RuntimeError("Terms acceptance page returned an HTTP error")
+            stage = log_stage("verifying website agreement acceptance")
+            verify_acceptance()
+            logger.info("Website agreement acceptance verified.")
+        except Exception as exc:
+            log_failure(logger, f"Website agreement acceptance failed during {stage}", exc)
+            raise RuntimeError(
+                f"Website agreement acceptance failed during {stage}: {error_summary(exc)}"
+            ) from None
 
 
 def run_playwright_checks(account_number: str, email: str, password: str) -> list:

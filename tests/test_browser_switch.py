@@ -23,6 +23,7 @@ from browser_switch import (
     DESKTOP_HARDWARE_PINS,
     DESKTOP_VIEWPORT,
     CREDENTIAL_MASK_SELECTOR,
+    accept_agreement_in_browser,
     fill_login_field,
     login_and_verify_account,
     initiate_browser_switch,
@@ -44,7 +45,7 @@ def tariff(identifier, product="GO-FIX-12M-26-08-19"):
 class SignupControlsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.inv = InvisiblePlaywright(headless=True)
+        cls.inv = InvisiblePlaywright(headless=True, locale="en-GB", timezone="Europe/London")
         cls.browser = cls.inv.__enter__()
 
     @classmethod
@@ -62,6 +63,92 @@ class SignupControlsTests(unittest.TestCase):
         self.page.set_content(
             html + '<button onclick="window.submitted = true">Switch Tariff</button>'
         )
+
+    def run_email_acceptance(self, *, query=None, iframe=False, status=200, missing=None):
+        base = "https://octopus.energy"
+        messages = base + "/dashboard/new/accounts/A-TEST/messages"
+        acceptance = base + "/smart/accept?" + (
+            query if query is not None else "accountNumber=A-TEST&enrolmentId=new&preSignedKey=synthetic-secret"
+        )
+        requests = []
+
+        def route_request(route):
+            url = route.request.url
+            requests.append(url)
+            if url == messages:
+                html = '<main><h1>Email history</h1><article><h3>FYI: Payment</h3><a href="/wrong">View email</a></article>'
+                if missing != "subject":
+                    html += '''<article><h3>Action: Accept our terms and conditions
+                        to complete your switch to Agile Octopus</h3><a href="/email/new">View email</a></article>
+                        <article><h3>Action: Accept our terms and conditions for an older switch</h3>
+                        <a href="/email/old">View email</a></article>'''
+                html += "</main>"
+            elif url == base + "/email/new":
+                html = '<iframe src="/email/body"></iframe>' if iframe else self.email_body(acceptance, missing)
+            elif url == base + "/email/body":
+                html = self.email_body(acceptance, missing)
+            elif url == acceptance:
+                return route.fulfill(status=status, content_type="text/html", body="Terms response")
+            else:
+                raise AssertionError("Unexpected fixture request")
+            route.fulfill(content_type="text/html", body=html)
+
+        self.page.route("https://octopus.energy/**", route_request)
+        verify = Mock()
+        with patch("browser_switch.logged_in_page") as login, \
+                patch("browser_switch.AGREEMENT_EMAIL_LINK_TIMEOUT_SECONDS", 3):
+            login.return_value.__enter__.return_value = self.page
+            try:
+                accept_agreement_in_browser("A-TEST", "email", "password", "new", verify)
+            finally:
+                self.email_requests = requests
+                self.email_verify = verify
+                login.return_value.__exit__.assert_called_once()
+        return acceptance
+
+    @staticmethod
+    def email_body(acceptance, missing):
+        if missing == "link":
+            return "Email without an acceptance link"
+        return '<a href="' + acceptance.replace("&", "&amp;") + '">&nbsp;accept the terms and conditions&nbsp;</a>'
+
+    def test_email_acceptance_uses_first_matching_message_and_its_dynamic_link(self):
+        acceptance = self.run_email_acceptance()
+        self.assertEqual(self.email_requests, [
+            "https://octopus.energy/dashboard/new/accounts/A-TEST/messages",
+            "https://octopus.energy/email/new", acceptance,
+        ])
+        self.email_verify.assert_called_once_with()
+
+    def test_email_acceptance_reads_link_from_iframe(self):
+        acceptance = self.run_email_acceptance(iframe=True)
+        self.assertEqual(self.email_requests[-1], acceptance)
+        self.email_verify.assert_called_once_with()
+
+    def test_outdated_or_invalid_email_link_is_never_followed(self):
+        for query in (
+            "accountNumber=A-OTHER&enrolmentId=new&preSignedKey=synthetic-secret",
+            "accountNumber=A-TEST&enrolmentId=old&preSignedKey=synthetic-secret",
+            "accountNumber=A-TEST&enrolmentId=new",
+        ):
+            with self.subTest(query=query), self.assertRaisesRegex(RuntimeError, "finding terms acceptance link"):
+                self.run_email_acceptance(query=query)
+            self.assertEqual(len(self.email_requests), 2)
+            self.email_verify.assert_not_called()
+
+    def test_missing_email_or_link_fails_without_accepting(self):
+        for missing in ("subject", "link"):
+            with self.subTest(missing=missing), self.assertRaises(RuntimeError):
+                self.run_email_acceptance(missing=missing)
+            self.email_verify.assert_not_called()
+            self.assertFalse(any("/smart/accept" in url for url in self.email_requests))
+
+    def test_failed_acceptance_page_is_not_reported_as_success_or_logged_with_key(self):
+        with self.assertLogs("octobot.browser_switch", level="DEBUG") as logs, \
+                self.assertRaisesRegex(RuntimeError, "following terms acceptance link") as raised:
+            self.run_email_acceptance(status=403)
+        self.email_verify.assert_not_called()
+        self.assertNotIn("synthetic-secret", str(raised.exception) + "\n".join(logs.output))
 
     def test_login_entry_waits_for_editable_fields_and_replaces_partial_values(self):
         self.page.set_content('''
@@ -327,6 +414,13 @@ class BrowserHardwareTests(unittest.TestCase):
 
 
 class BrowserLifecycleTests(unittest.TestCase):
+    def test_missing_agreement_credentials_fail_before_browser_launch(self):
+        with patch("browser_switch.logged_in_page") as login:
+            for args in [("", "email", "password"), ("A-TEST", "", "password"), ("A-TEST", "email", "")]:
+                with self.subTest(args=args), self.assertRaisesRegex(RuntimeError, "Website agreement acceptance requires"):
+                    accept_agreement_in_browser(*args, "new", Mock())
+            login.assert_not_called()
+
     def test_field_readiness_failure_does_not_expose_assertion_contents(self):
         page = Mock()
         with patch("browser_switch.expect") as editable:
