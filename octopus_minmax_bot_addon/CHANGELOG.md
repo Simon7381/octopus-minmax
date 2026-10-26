@@ -1,3 +1,21 @@
+## v2.0.11 - v2.0.11
+## What's Changed
+
+* Add tomorrow's tariff prediction using Octopus's historical consumption API. Average each half hour from the previous four matching weekdays, then compare the same usage profile across tariffs using published VAT-inclusive rates and daily standing charges.
+* Add `PREDICTION_TIME` (default `21:00`, Europe/London) and `PREDICTION_TARIFFS` (default `agile,cosy`; Agile is required), including add-on options and WebUI configuration.
+* Retry incomplete Agile rates every 30 minutes for scheduled predictions. Keep the original target date and run predictions independently of tariff switching; predictions never request a tariff change.
+* Add a one-time WebUI prediction button and native Home Assistant button command. Show running, unavailable or completed status in the GUI, and deliver calculated predictions through Logs and `NOTIFICATION_URLS`. Manual checks do not start or alter scheduled retry loops.
+* Handle BST/DST changes with 46- or 50-slot local days. Match history by local clock time, average repeated autumn slots within each source day, and use the other source days for absent spring slots.
+* Try browser agreement acceptance before the existing API: open the first matching terms email, validate its acceptance link against the configured account and enrolment, and verify completion. Fall back to the API when browser acceptance fails or cannot be confirmed.
+* Set the application and add-on release version to v2.0.11.
+
+## Validation
+* All 148 offline tests passed in the rebuilt Podman image before the release version bump, including prediction calculations, DST transitions, manual and scheduled execution, notification delivery with mocks, browser email acceptance and API fallback.
+* Live read-only Octopus API checks retrieved four matching historical weekdays. Desktop and mobile browser checks confirmed the one-time GUI reports unpublished rates without scheduling a retry.
+* No live tariff changes or external test notifications were submitted.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.10...v2.0.11
+
 ## v2.0.10 - v2.0.10
 ## What's Changed
 

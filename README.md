@@ -129,6 +129,7 @@ do not start another comparison. There is no on/off state to reset.
    `/info`). On older HA versions, use `hassio.addon_stdin` and replace the
    `app:` key with `addon:`. This uses Supervisor and requires an HA administrator
    account; it does not require MQTT or access to the bot's HTTP port.
+
 3. Save the helper. In its entity settings, assign an area if wanted and confirm
    its entity ID is `button.octopus_minmax_comparison_preview` (adjust the card
    below if yours differs).
@@ -229,9 +230,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.10` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.11` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.10` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.11` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 
@@ -281,10 +282,10 @@ not an exact GPU match or GPU passthrough. These settings apply to startup login
 `TEST_PLAYWRIGHT` and website switches; adjust the constants in `browser_switch.py`
 if the testing desktop changes. See [Invisible Playwright pinning](https://github.com/feder-cr/invisible_playwright/blob/main/docs/pinning.md).
 
-| Tariff ID | Signup path    | Website action                                                           |
-| --------- | -------------- | ------------------------------------------------------------------------ |
-| `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                |
-| `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                             |
+| Tariff ID | Signup path    | Website action                                                                                                          |
+| --------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `go`      | `go`           | Check I accept the Terms & Conditions, then Switch Tariff                                                               |
+| `agile`   | `agile`        | Check terms if displayed, then Switch Tariff                                                                            |
 | `cosy`    | `cosy-octopus` | Open `sign-up/new/` with `variant=VARIABLE`; verify Variable is selected and Fixed is not selected before Switch Tariff |
 
 Each path opens `https://octopus.energy/smart/<path>/sign-up/?accountNumber=<account>`
@@ -442,16 +443,16 @@ Note : Remove the --restart unless line if you set the ONE_OFF variable or it wi
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ACC_NUMBER`           | Your Octopus Energy account number.                                                                                                                                                                                    |
 | `API_KEY`              | API token for accessing your Octopus Energy account.                                                                                                                                                                   |
-| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                                                      |
-| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                                                   |
+| `OCTOPUS_LOGIN_EMAIL`  | Octopus website email, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                       |
+| `OCTOPUS_LOGIN_PASSWD` | Octopus website password, used for email agreement acceptance and when API tariff initiation fails.                                                                                                                    |
 | `TARIFFS`              | A list of tariffs to compare against. Default is go,agile,flexible                                                                                                                                                     |
 | `EXECUTION_TIME`       | (Optional) The time (HH:MM) when the script should execute. Default is `23:30` (11 PM).                                                                                                                                |
 | `SWITCH_THRESHOLD`     | A value (in pence) which the saving must be before the switch occurs. Default is `2` (2p).                                                                                                                             |
 | `NOTIFICATION_URLS`    | (Optional) A comma-separated list of [Apprise](https://github.com/caronc/apprise) notification URLs for sending logs and updates. See [Apprise documentation](https://github.com/caronc/apprise/wiki) for URL formats. |
 | `ONE_OFF`              | (Optional) A flag for you to simply trigger an immediate execution instead of starting scheduling.                                                                                                                     |
 | `DRY_RUN`              | (Optional) A flag to compare but not switch tariffs.                                                                                                                                                                   |
-| `DEBUG` | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false. |
-| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                             |
+| `DEBUG`                | (Optional, default false) Detailed application diagnostics in file and container logs. INFO, warnings and errors remain enabled when false.                                                                            |
+| `TEST_PLAYWRIGHT`      | (Optional, default false) Test Agile and Cosy website forms once at startup without submitting. Disables comparison and scheduling until restarted with this mode off.                                                 |
 | `BATCH_NOTIFICATIONS`  | (Optional) A flag to send messages in one batch rather than individually.                                                                                                                                              |
 | `WEB_USERNAME`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
 | `WEB_PASSWORD`         | (Optional) Defaults to `admin`. Auth for the web dashboard.                                                                                                                                                            |
