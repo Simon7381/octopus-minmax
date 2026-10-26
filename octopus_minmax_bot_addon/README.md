@@ -1,6 +1,6 @@
 # Octopus Minmax Bot 🐙🤖
 
-Current release: **v2.0.11a**.
+Current release: **v2.0.12**.
 
 ## Description
 
@@ -176,7 +176,7 @@ documentation.
 ### Running Manually
 
 1. Install the Python requirements.
-   Use Python 3.14 and run `python -m invisible_playwright fetch`. The container includes C++ patched Firefox
+   Use Python 3.15 and run `python -m invisible_playwright fetch`. The container includes C++ patched Firefox
    and its runtime dependencies; see [invisible-playwright documentation](https://github.com/feder-cr/invisible_playwright).
 2. Configure the environment variables.
 3. Run `python src/main.py`. I recommend scheduling it to run it at 11 PM in order to leave yourself an hour as a safety margin in case Octopus takes a while to generate your new agreement.
@@ -210,7 +210,7 @@ or use the docker-compose.yaml **Don't forget to add your environment variables*
 ### Building and publishing
 
 The production Dockerfile uses Microsoft's Playwright Python image on Ubuntu 24.04
-(Noble), with the Python 3.14 runtime copied from the official Python image. The
+(Noble), with the Python 3.15 runtime copied from the official Python image. The
 Microsoft base supplies fonts and browser system libraries. The application keeps
 using Invisible Playwright's separate Firefox build.
 
@@ -220,7 +220,7 @@ pull fresh base images, and reinstall dependencies without cached build layers.
 The standard Playwright package is matched to the resolved image's browser version;
 the other packages use their latest compatible stable releases.
 
-Build locally with Python 3.14 and Docker or Podman:
+Build locally with Python 3.15 and Docker or Podman:
 
 ```powershell
 python scripts/build_image.py --engine docker --tag simon7381/octopus-minmax:local
@@ -238,9 +238,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.11a` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.12` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.11a` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.12` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 
@@ -249,7 +249,11 @@ The workflow can also be run manually with an existing release tag.
 Every build runs `apt-get update` and `apt-get upgrade` against the configured
 Ubuntu repositories before installing the application. The runtime excludes the
 unused GStreamer Bad codec packages and package installers (`pip`, `virtualenv`
-and `ensurepip`); their bundled wheels and caches are removed too. Firefox login
+and `ensurepip`), plus virtualenv's unused `python-discovery` and `filelock`
+dependencies. Removing `virtualenv` alone leaves `filelock 4.2.0` in the base
+image's Python 3.12 environment, including CVE-2026-112940 and the related
+filelock findings. The build checks that these base-image installer packages
+are absent; their bundled wheels and caches are removed too. Firefox login
 and the application tests remain supported. The image is not intended as a
 WebKit or general multimedia test environment.
 
@@ -441,7 +445,7 @@ browser session or an Octopus login flow that does not challenge automation is r
 
 For local tests outside the container, run `python -m pip install --upgrade -r requirements.txt`,
 then `python -m invisible_playwright fetch` to fetch the matching browser engine, then
-run `python -m unittest discover -s tests -v`. The full requirements target Python 3.14.
+run `python -m unittest discover -s tests -v`. The full requirements target Python 3.15.
 
 Note : Remove the --restart unless line if you set the ONE_OFF variable or it will continuously run.
 

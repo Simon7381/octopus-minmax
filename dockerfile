@@ -1,6 +1,6 @@
 # Use scripts/build_image.py or the release workflow to resolve this version.
 ARG PLAYWRIGHT_VERSION
-FROM docker.io/library/python:3.14-slim-bookworm AS python_runtime
+FROM docker.io/library/python:3.15-slim-bookworm AS python_runtime
 FROM mcr.microsoft.com/playwright/python:v${PLAYWRIGHT_VERSION}-noble
 
 # Apply Ubuntu security updates before adding the application runtime.
@@ -13,11 +13,14 @@ RUN apt-get update \
 
 # Remove base-image installers, seed wheels and cached copies of their vendored
 # components. These tools are used to build the base, not to run the application.
-RUN /usr/bin/python3 -m pip uninstall --yes virtualenv pip \
-    && rm -rf /root/.cache/virtualenv
+# pip uninstall leaves dependencies behind: python-discovery and filelock are
+# only used by virtualenv here (filelock 4.2.0 has CVE-2026-112940 and related CVEs).
+RUN /usr/bin/python3 -m pip uninstall --yes virtualenv python-discovery filelock pip \
+    && rm -rf /root/.cache/virtualenv \
+    && /usr/bin/python3 -c "import importlib.util; assert all(importlib.util.find_spec(name) is None for name in ('virtualenv', 'python_discovery', 'filelock', 'pip')), 'Base-image installer packages remain'"
 
 # Microsoft's Noble image supplies the fonts and browser system dependencies.
-# Keep the application on Python 3.14 instead of Noble's system Python 3.12.
+# Keep the application on Python 3.15 instead of Noble's system Python 3.12.
 COPY --from=python_runtime /usr/local /usr/local
 ENV PATH="/usr/local/bin:${PATH}"
 ARG PLAYWRIGHT_VERSION

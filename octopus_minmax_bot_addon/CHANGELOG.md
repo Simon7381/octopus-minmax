@@ -1,3 +1,16 @@
+## v2.0.12 - v2.0.12
+## What's Changed
+
+* Remove the Playwright base image's unused `filelock 4.2.0` and `python-discovery` dependencies alongside `virtualenv`. Check their removal during the build to address CVE-2026-112940, CVE-2026-112937, CVE-2026-112914, CVE-2026-112906, CVE-2026-112913 and CVE-2026-112907.
+* Promote the application runtime and both release-workflow Python environments to Python 3.15. Retain the Playwright Noble base image and match its Playwright package version.
+* Update both READMEs with the dependency cleanup and Python 3.15 setup instructions; set the application and add-on release version to v2.0.12.
+
+## Validation
+* Python 3.15.1 and Playwright 1.64.1 passed all 153 tests on native amd64, including local Firefox fixtures. The ARM64 image built under QEMU; four email-flow methods hit the short fixture deadlines and passed targeted reruns with production timeouts. Assertions and application code were unchanged.
+* HTTP dashboard/status and public HTTPS requests/aiohttp checks passed on both architectures. All 40 installed dependency versions matched the tested Python 3.14 image, and filesystem checks found no remaining `filelock` copies. PyYAML and frozenlist use their optional pure Python fallbacks on Python 3.15.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.11a...v2.0.12
+
 ## v2.0.11a - v2.0.11a
 ## What's Changed
 
