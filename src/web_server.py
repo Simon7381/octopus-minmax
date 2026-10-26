@@ -8,12 +8,14 @@ import config
 import config_manager
 from comparison_preview import ComparisonPreview
 from diagnostics import log_failure
+from prediction_preview import PredictionPreview
 
 logger = logging.getLogger("octobot.web_server")
 
 app = Flask(__name__)
 app.secret_key = "octobot-tool"
 comparison_preview = ComparisonPreview()
+prediction_preview = PredictionPreview()
 preview_token = secrets.token_urlsafe(32)
 
 
@@ -48,7 +50,31 @@ def require_auth(f):
 @require_auth
 def index():
     """Homepage - Dashboard with navigation buttons"""
-    return render_template("index.html", preview=comparison_preview.status(), preview_token=preview_token)
+    return render_template("index.html", preview=comparison_preview.status(),
+                           prediction=prediction_preview.status(), preview_token=preview_token)
+
+
+@app.route("/prediction", methods=["POST"])
+@require_auth
+def start_prediction():
+    if not secrets.compare_digest(request.form.get("preview_token", "").encode(), preview_token.encode()):
+        abort(400, "Reload the dashboard before starting a prediction.")
+    try:
+        started = prediction_preview.start()
+        flash("Prediction started. Results will appear in the logs and configured notification channel." if started
+              else "A prediction is already running.", "success")
+    except Exception as exc:
+        log_failure(logger, "Could not start prediction", exc)
+        flash("Could not start prediction. See Logs for diagnostics.", "error")
+    return redirect(".", code=303)
+
+
+@app.route("/prediction-status")
+@require_auth
+def prediction_status():
+    response = app.json.response(prediction_preview.status())
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/preview", methods=["POST"])

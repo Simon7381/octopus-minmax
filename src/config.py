@@ -19,6 +19,8 @@ NOTIFICATION_URLS = os.getenv("NOTIFICATION_URLS", "")
 BATCH_NOTIFICATIONS = os.getenv("BATCH_NOTIFICATIONS", "false") in ["true", "True", "1"]
 
 EXECUTION_TIME = os.getenv("EXECUTION_TIME", "23:30")
+PREDICTION_TIME = os.getenv("PREDICTION_TIME", "21:00")
+PREDICTION_TARIFFS = os.getenv("PREDICTION_TARIFFS", "agile,cosy")
 
 # A threshold (in pence) over which the difference between the tariffs must be before the switch happens.
 SWITCH_THRESHOLD = int(os.getenv("SWITCH_THRESHOLD", 2))

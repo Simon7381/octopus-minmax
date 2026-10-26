@@ -209,6 +209,20 @@
       </div>
     </div>
 
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
+      <h3 class="text-xl font-bold text-gray-100 mb-4">Tomorrow's prediction</h3>
+      <p class="text-gray-400 text-sm mb-4">Average each half hour from the previous four matching weekdays.
+        Compare tomorrow's costs without switching. Scheduled predictions retry missing Agile rates every 30 minutes;
+        the manual dashboard button checks once.</p>
+      <label class="block text-gray-300 mb-2" for="prediction_time">Prediction time (Europe/London)</label>
+      <input type="time" id="prediction_time" name="prediction_time" value="{{ config.prediction_time }}" required
+        class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded px-4 py-2 mb-4">
+      <label class="block text-gray-300 mb-2" for="prediction_tariffs">Prediction tariffs (comma-separated; agile required)</label>
+      <input type="text" id="prediction_tariffs" name="prediction_tariffs" value="{{ config.prediction_tariffs }}" required
+        class="w-full bg-gray-900 border border-gray-600 text-gray-100 rounded px-4 py-2">
+      <p class="text-gray-500 text-sm mt-2">Valid: agile, cosy, go, go-fix-12m, flexible. Daily scheduling pauses in One-Off and Playwright test modes.</p>
+    </div>
+
     <!-- Notification Settings -->
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
       <h3 class="text-xl font-bold text-gray-100 mb-4">

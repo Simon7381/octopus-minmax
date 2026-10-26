@@ -6,5 +6,6 @@
   ],
   "settings": {
     "files.eol": "\n",
+    "cSpell.words": ["octobot"],
   },
 }

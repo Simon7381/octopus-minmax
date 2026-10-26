@@ -28,6 +28,42 @@ not change dry-run settings, the scheduled comparison or one-off execution state
 Only one preview runs at a time; the dashboard shows its progress and completion.
 This uses consumption received so far today, not a forecast of the full day's cost.
 
+### Tomorrow's tariff prediction
+
+Configure `PREDICTION_TIME: "21:00"` and `PREDICTION_TARIFFS: "agile,cosy"` in
+the add-on options. `agile` must be included. Times use Europe/London.
+
+The prediction averages each half hour of the previous four matching weekdays
+using Octopus's authenticated meter consumption API. It applies tomorrow's
+published half-hourly prices to that same usage profile for every selected tariff,
+including VAT and the daily standing charge, and reports the estimated cheapest.
+It never switches tariffs.
+
+Incomplete Agile rates are shown in the GUI with an available-slot count.
+Scheduled predictions retry every 30 minutes for the original target date and
+show their next retry time. The manual button checks once and reports unavailable
+rates without starting a retry loop or altering pending scheduled retries. Routine waiting
+updates stay in the GUI and Logs; the completed comparison is sent through your
+notification channel when rates become available.
+A new daily run replaces an older waiting prediction; retries expire at the
+end of their target day. Four complete source weekdays are required. Missing
+readings or other incomplete tariff data produce a clear failure instead of a
+partial estimate. Clock changes use the full 46/50-slot local day: repeated
+historical clock slots are averaged within their day, and missing spring clock
+slots use the other source days.
+
+In the WebUI, select **Run tomorrow’s prediction**. The GUI shows running,
+unavailable, or completed status. Calculated predictions show the source dates,
+estimated kWh and tariff totals in Logs and your configured `NOTIFICATION_URLS`,
+immediately even with notification batching enabled. Daily scheduling pauses
+in One-Off and Playwright test modes; manual one-time predictions remain
+available. Predictions run independently of normal comparison scheduling.
+
+For a Home Assistant Template Button helper, send
+`{"command": "prediction_preview"}` using Supervisor's “Write data to app stdin”
+action. Use the same add-on selection as the comparison preview button below.
+See the [prediction button YAML](https://github.com/Simon7381/octopus-minmax/blob/main/home_assistant/prediction_preview.yaml).
+
 ## How to Use
 
 ### Requirements

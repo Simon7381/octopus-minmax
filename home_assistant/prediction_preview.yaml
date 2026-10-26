@@ -1,0 +1,13 @@
+# Replace YOUR_ADDON_SLUG with the full installed add-on slug from its HA URL.
+template:
+  - button:
+      - name: Octopus MinMax Tomorrow Prediction
+        unique_id: octopus_minmax_prediction_preview
+        default_entity_id: button.octopus_minmax_prediction_preview
+        icon: mdi:chart-timeline-variant
+        press:
+          - action: hassio.app_stdin
+            data:
+              app: YOUR_ADDON_SLUG
+              input:
+                command: prediction_preview

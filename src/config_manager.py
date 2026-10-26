@@ -18,6 +18,8 @@ def get_config():
             "octopus_login_password_configured": bool(config.OCTOPUS_LOGIN_PASSWD),
             "base_url": config.BASE_URL,
             "execution_time": config.EXECUTION_TIME,
+            "prediction_time": config.PREDICTION_TIME,
+            "prediction_tariffs": config.PREDICTION_TARIFFS,
             "switch_threshold": config.SWITCH_THRESHOLD,
             "tariffs": config.TARIFFS,
             "one_off_run": config.ONE_OFF_RUN,
@@ -50,6 +52,10 @@ def update_config(new_values):
             config.BASE_URL = new_values["base_url"]
         if "execution_time" in new_values:
             config.EXECUTION_TIME = new_values["execution_time"]
+        if "prediction_time" in new_values:
+            config.PREDICTION_TIME = new_values["prediction_time"]
+        if "prediction_tariffs" in new_values:
+            config.PREDICTION_TARIFFS = new_values["prediction_tariffs"]
         if "switch_threshold" in new_values:
             config.SWITCH_THRESHOLD = int(new_values["switch_threshold"])
         if "tariffs" in new_values:
@@ -90,6 +96,17 @@ def update_config(new_values):
 def validate_config(config_dict):
     """Validate config values before saving"""
     errors = []
+
+    if "prediction_time" in config_dict and not re.fullmatch(
+        r"([01][0-9]|2[0-3]):[0-5][0-9]", config_dict["prediction_time"]
+    ):
+        errors.append("Prediction time must be in HH:MM format (00:00 to 23:59)")
+    if "prediction_tariffs" in config_dict:
+        from prediction_engine import PredictionError, prediction_tariffs
+        try:
+            prediction_tariffs(config_dict["prediction_tariffs"])
+        except PredictionError as exc:
+            errors.append(str(exc))
 
     # Validate execution_time format (HH:MM)
     if "execution_time" in config_dict:

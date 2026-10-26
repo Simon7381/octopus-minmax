@@ -1,5 +1,6 @@
 import logging
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -144,10 +145,16 @@ class QueryService:
             retry += 1
             time.sleep(wait_time)
 
-    def execute_rest_query(self, url: str):
+    def execute_rest_query(self, url: str, *, authenticated: bool = False):
         logger.debug("Executing REST request.")
         try:
-            response = requests.get(url, timeout=60)
+            options = {}
+            if authenticated:
+                target, base = urlsplit(url), urlsplit(self.base_url)
+                if (target.scheme, target.netloc) != (base.scheme, base.netloc):
+                    raise ValueError("Authenticated REST requests must use the configured API origin")
+                options["auth"] = (self.api_key, "")
+            response = requests.get(url, timeout=60, **options)
             logger.debug("REST response: HTTP %s.", response.status_code)
             response.raise_for_status()
             return response.json()

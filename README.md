@@ -28,6 +28,53 @@ not change dry-run settings, the scheduled comparison or one-off execution state
 Only one preview runs at a time; the dashboard shows its progress and completion.
 This uses consumption received so far today, not a forecast of the full day's cost.
 
+### Tomorrow's tariff prediction
+
+Set `PREDICTION_TIME: "21:00"` and `PREDICTION_TARIFFS: "agile,cosy"` in the
+Home Assistant add-on options (or the equivalent container environment variables).
+`agile` is required; the prediction list is independent of `TARIFFS`. You can
+also change these settings temporarily through Configuration.
+
+At the configured Europe/London time, the bot predicts tomorrow's usage by
+averaging each half hour from the previous four matching weekdays: for a Tuesday,
+the four previous Tuesdays. Historical readings come directly from Octopus's
+authenticated meter consumption API, in kWh. The identical predicted half-hour
+profile is priced against each selected tariff's published VAT-inclusive unit
+rates and daily standing charge. No tariff switch is requested.
+
+Every half hour of tomorrow must have a published Agile rate. If any are missing,
+the scheduled prediction waits and retries every 30 minutes, retaining the original target
+date. The dashboard shows the number of available rates and the retry time; waiting
+updates go to the GUI and Logs, and the completed comparison is sent to your
+notification channel once rates are available. It never fills missing rates with old
+prices. A retry expires at the end of its target day; a new daily scheduled run
+replaces an older waiting prediction. Other failures report diagnostics instead
+of producing a partial comparison. Four complete source days are required;
+missing consumption is never treated as zero.
+
+Choose **Run tomorrow’s prediction** in the WebUI to run it manually, including
+when using Home Assistant ingress. The GUI reports whether the prediction is
+running, complete, or unavailable. Calculated results appear in Logs and your
+configured `NOTIFICATION_URLS` immediately, even with batching enabled. The
+manual button makes one attempt and reports when rates are
+not yet available; it never starts a retry loop or changes a pending scheduled
+retry. Daily prediction scheduling pauses in One-Off and Playwright test modes;
+manual one-time predictions remain available. Prediction work runs separately
+from the comparison/switch schedule.
+
+UK clock changes use the full local day (46 or 50 half hours when appropriate).
+Historical slots match local clock time, with each source day weighted equally:
+the repeated autumn hour is averaged within its day; the absent spring hour uses
+the other source days that contain that clock slot. Standing charges remain one
+daily charge.
+
+For a native Home Assistant Template Button, use Supervisor's stdin action with
+`{"command": "prediction_preview"}`. See
+[the prediction button example](home_assistant/prediction_preview.yaml).
+It shares the same prediction worker and status as the WebUI.
+
+API field and interval semantics follow [Octopus's REST endpoint documentation](https://docs.octopus.energy/rest/guides/endpoints/).
+
 ## How to Use
 
 ### Requirements

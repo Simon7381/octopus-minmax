@@ -21,6 +21,12 @@ configuration:
   EXECUTION_TIME:
     name: Execution Time
     description: When not One Off. This is the time to execute comparison.
+  PREDICTION_TIME:
+    name: Prediction Time
+    description: Time in Europe/London to predict tomorrow's costs, using four matching weekdays. Default 21:00. Missing Agile rates retry every 30 minutes. Daily scheduling is paused in One-Off and Playwright test modes.
+  PREDICTION_TARIFFS:
+    name: Prediction Tariffs
+    description: Comma-separated tariffs to predict. Must include agile. Default agile,cosy. Predictions never switch tariffs.
   SWITCH_THRESHOLD:
     name: Switch Threshold
     description: A value (in pence) which the saving must be before the switch occurs. Default is 2 (2p).

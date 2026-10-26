@@ -24,6 +24,8 @@ options:
   OCTOPUS_LOGIN_EMAIL: ""
   OCTOPUS_LOGIN_PASSWD: ""
   EXECUTION_TIME: "23:30"
+  PREDICTION_TIME: "21:00"
+  PREDICTION_TARIFFS: "agile,cosy"
   SWITCH_THRESHOLD: 2
   ONE_OFF: false
   DRY_RUN: false
@@ -41,6 +43,8 @@ schema:
   OCTOPUS_LOGIN_EMAIL: str?
   OCTOPUS_LOGIN_PASSWD: password?
   EXECUTION_TIME: str
+  PREDICTION_TIME: match(^([01][0-9]|2[0-3]):[0-5][0-9]$)
+  PREDICTION_TARIFFS: str
   SWITCH_THRESHOLD: int
   ONE_OFF: bool
   DRY_RUN: bool
