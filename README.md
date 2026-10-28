@@ -1,6 +1,6 @@
 # Octopus Minmax Bot 🐙🤖
 
-Current release: **v2.0.12**.
+Current release: **v2.0.13**.
 
 ## Description
 
@@ -38,10 +38,15 @@ Home Assistant add-on options (or the equivalent container environment variables
 also change these settings temporarily through Configuration.
 
 At the configured Europe/London time, the bot predicts tomorrow's usage by
-averaging each half hour from the previous four matching weekdays: for a Tuesday,
-the four previous Tuesdays. Historical readings come directly from Octopus's
-authenticated meter consumption API, in kWh. The identical predicted half-hour
-profile is priced against each selected tariff's published VAT-inclusive unit
+averaging each half hour from the four most recent complete matching weekdays:
+for a Tuesday, the most recent four Tuesdays with complete readings. Incomplete
+days are skipped in favour of older matching weekdays, searching back at most
+**three calendar months**. If fewer than four complete days are available, each
+half hour uses the available complete days plus the most recent partial-day
+readings, up to four samples. Results show the source dates and clearly flag
+limited history and the number of samples per half hour. Historical readings
+come directly from Octopus's authenticated meter consumption API, in kWh. The
+identical predicted half-hour profile is priced against each selected tariff's published VAT-inclusive unit
 rates and daily standing charge. No tariff switch is requested.
 
 Agile's day-ahead publication normally covers tomorrow only up to 23:00 UK time.
@@ -56,8 +61,9 @@ updates go to the GUI and Logs, and the completed comparison is sent to your
 notification channel once rates are available. It never fills missing rates with old
 prices. A retry expires at the end of its target day; a new daily scheduled run
 replaces an older waiting prediction. Other failures report diagnostics instead
-of producing a comparison with gaps. Four complete source days are required;
-missing consumption is never treated as zero.
+of producing a comparison with gaps. Missing consumption is never treated as zero.
+A prediction only fails for missing history when a half hour in the comparison
+period has no usable sample within the three-month window.
 
 Choose **Run tomorrow’s prediction** in the WebUI to run it manually, including
 when using Home Assistant ingress. The GUI reports whether the prediction is
@@ -238,9 +244,9 @@ For GitHub to publish to Docker Hub, configure:
 - Repository secrets `DOCKER_USERNAME` and `DOCKER_PASSWORD` (a Docker Hub access token).
 - Actions permission to create pull requests, for the add-on metadata update.
 
-Commit the changes and publish a GitHub release tagged `v2.0.12` on that commit. The release workflow
+Commit the changes and publish a GitHub release tagged `v2.0.13` on that commit. The release workflow
 builds that tag, resolves the latest Noble image, runs the offline tests, and only
-then publishes `linux/amd64` and `linux/arm64` images with `v2.0.12` and `latest` tags.
+then publishes `linux/amd64` and `linux/arm64` images with `v2.0.13` and `latest` tags.
 It subsequently opens a pull request to synchronize the add-on metadata and docs.
 The workflow can also be run manually with an existing release tag.
 

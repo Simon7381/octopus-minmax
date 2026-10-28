@@ -1,7 +1,8 @@
-"""Tomorrow's costs from four matching weekdays of half-hourly meter readings."""
+"""Tomorrow's costs from matching weekdays of half-hourly meter readings."""
 
+from calendar import monthrange
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from math import isfinite
 from statistics import mean
@@ -13,6 +14,7 @@ from tariff import TARIFFS
 
 LONDON = ZoneInfo("Europe/London")
 HALF_HOUR = timedelta(minutes=30)
+SOURCE_DAYS = 4
 
 
 class PredictionError(ValueError):
@@ -54,6 +56,13 @@ def day_slots(day):
     return slots
 
 
+def history_cutoff(day):
+    """Three calendar months before the target, clamped to a valid day."""
+    year, month = divmod(day.year * 12 + day.month - 1 - 3, 12)
+    month += 1
+    return date(year, month, min(day.day, monthrange(year, month)[1]))
+
+
 def clock_slot(moment):
     local = moment.astimezone(LONDON)
     return local.hour, local.minute
@@ -75,6 +84,7 @@ class PredictionResult:
     source_dates: list[date]
     profile: list[dict]
     comparisons: list[TariffComparison]
+    incomplete_source_days: list[dict] = field(default_factory=list)
 
     def as_dict(self):
         ranked = sorted(self.comparisons, key=lambda entry: entry.total_cost)
@@ -84,6 +94,10 @@ class PredictionResult:
         return {
             "target_date": self.target_date.isoformat(),
             "source_dates": [day.isoformat() for day in self.source_dates],
+            "incomplete_source_days": self.incomplete_source_days,
+            "history_sample_min": min(slot["history_samples"] for slot in self.profile),
+            "history_sample_max": max(slot["history_samples"] for slot in self.profile),
+            "uses_partial_history": any(slot.get("uses_partial_history", False) for slot in self.profile),
             "total_kwh": sum(slot["kwh"] for slot in self.profile),
             "slot_count": len(self.profile),
             "day_slot_count": day_slot_count,
@@ -100,7 +114,8 @@ class PredictionResult:
                 for entry in ranked
             ],
             "slots": [{"start": slot["start"].astimezone(LONDON).isoformat(),
-                       "kwh": slot["kwh"], "rates_pence": slot["rates_pence"],
+                       "kwh": slot["kwh"], "history_samples": slot["history_samples"],
+                       "rates_pence": slot["rates_pence"],
                        "costs_pence": {tariff_id: slot["kwh"] * price
                                        for tariff_id, price in slot["rates_pence"].items()}}
                       for slot in self.profile],
@@ -111,6 +126,14 @@ class PredictionResult:
         lines = [f"PREDICTION — {self.target_date:%A %d %B %Y} (Europe/London)",
                  "Source days: " + ", ".join(day.isoformat() for day in self.source_dates),
                  f"Estimated consumption: {result['total_kwh']:.3f} kWh across {result['slot_count']} half hours."]
+        if self.incomplete_source_days:
+            lines.append("Incomplete source days: " + ", ".join(
+                f"{day['date']} ({day['slot_count']} of {day['day_slot_count']} slots)"
+                for day in self.incomplete_source_days) + ". Searched older matching weekdays within three months.")
+        if result["uses_partial_history"] or result["history_sample_min"] < SOURCE_DAYS:
+            lines.append(f"Limited history: {result['history_sample_min']}–{result['history_sample_max']} "
+                         "matching days per half hour; used available readings within three months. "
+                         "Missing consumption is never treated as zero.")
         start = self.profile[0]["start"].astimezone(LONDON)
         end = (self.profile[-1]["start"] + HALF_HOUR).astimezone(LONDON)
         lines.append(f"Comparison period: {start:%Y-%m-%d %H:%M %Z} to {end:%Y-%m-%d %H:%M %Z}.")
@@ -124,7 +147,7 @@ class PredictionResult:
         lines.append(f"Estimated cheapest: {result['best_tariff']}.")
         if len(self.comparisons) > 1:
             lines.append(f"Saving against the next cheapest: £{result['saving_pounds']:.2f}.")
-        lines.append("Estimate based on the same half hour on the previous four matching weekdays. No tariff change requested.")
+        lines.append("Estimate based on matching local half hours, preferring four complete matching weekdays. No tariff change requested.")
         return "\n".join(lines)
 
 
@@ -178,10 +201,11 @@ class PredictionEngine:
             raise PredictionError("No electricity meter serial number or MPAN is available for prediction.")
         return point["mpan"], serials, agreement["tariff_code"][-1]
 
-    def _profile(self, mpan, serials, target_date):
-        source_dates = [target_date - timedelta(weeks=weeks) for weeks in range(1, 5)]
-        histories = []
-        for day in source_dates:
+    def _profile(self, mpan, serials, target_date, *, slots=None):
+        histories, partial_histories, incomplete = [], [], []
+        cutoff = history_cutoff(target_date)
+        day = target_date - timedelta(weeks=1)
+        while day >= cutoff:
             readings = {}
             expected = day_slots(day)
             for serial in serials:
@@ -199,21 +223,40 @@ class PredictionEngine:
                         raise PredictionError(f"Overlapping meter readings disagree for {day}.")
                     readings[start] = kwh
             if set(readings) != set(expected):
-                raise PredictionError(f"Incomplete half-hourly consumption for {day}: "
-                                      f"{len(readings)} of {len(expected)} slots. Four complete matching weekdays are required.")
+                # Only missing intervals can be replaced by an older weekday.
+                # Malformed or conflicting readings still fail validation above.
+                if set(readings) - set(expected):
+                    raise PredictionError(f"Consumption for {day} is not aligned to half-hour slots.")
+                incomplete.append({"date": day.isoformat(), "slot_count": len(readings),
+                                "day_slot_count": len(expected)})
             by_clock = {}
             for start, kwh in readings.items():
                 by_clock.setdefault(clock_slot(start), []).append(kwh)
             # Give each source day equal weight in the repeated autumn hour.
-            histories.append({clock: mean(values) for clock, values in by_clock.items()})
+            history = (day, {clock: mean(values) for clock, values in by_clock.items()}, len(readings) != len(expected))
+            (partial_histories if history[2] else histories).append(history)
+            if len(histories) == SOURCE_DAYS:
+                break
+            day -= timedelta(weeks=1)
+        # Prefer complete days. At the three-month limit, supplement each clock
+        # slot with the newest available partial days, up to four samples.
+        if len(histories) < SOURCE_DAYS:
+            histories.extend(partial_histories)
         profile = []
-        for start in day_slots(target_date):
-            values = [history[clock_slot(start)] for history in histories if clock_slot(start) in history]
-            if not values:
-                raise PredictionError("No matching historical half hour is available.")
+        used_dates = set()
+        for start in day_slots(target_date) if slots is None else slots:
+            samples = [(day, history[clock_slot(start)], partial) for day, history, partial in histories
+                       if clock_slot(start) in history][:SOURCE_DAYS]
+            if not samples:
+                raise PredictionError(
+                    f"No matching historical half hour is available for {start.astimezone(LONDON):%H:%M} "
+                    f"Europe/London within three months ({cutoff} to {target_date}). "
+                    "Missing consumption is never treated as zero.")
+            used_dates.update(day for day, _, _ in samples)
             # A complete spring clock-change day has no 01:00/01:30 local slots.
-            profile.append({"start": start, "kwh": mean(values)})
-        return source_dates, profile
+            profile.append({"start": start, "kwh": mean(value for _, value, _ in samples),
+                            "history_samples": len(samples), "uses_partial_history": any(partial for _, _, partial in samples)})
+        return sorted(used_dates, reverse=True), profile, incomplete
 
     @staticmethod
     def _rate_at(rates, start, end):
@@ -279,8 +322,8 @@ class PredictionEngine:
         # Check Agile publication before downloading historical usage or pricing others.
         tariffs.sort(key=lambda tariff: tariff.id != "agile")
         rates = {tariffs[0].id: self._rates(tariffs[0], region, target_date, products)}
-        source_dates, profile = self._profile(mpan, serials, target_date)
-        profile = profile[:len(rates[tariffs[0].id][0])]
+        source_dates, profile, incomplete = self._profile(
+            mpan, serials, target_date, slots=day_slots(target_date)[:len(rates[tariffs[0].id][0])])
         for tariff in tariffs[1:]:
             rates[tariff.id] = self._rates(tariff, region, target_date, products,
                                           slots=[slot["start"] for slot in profile])
@@ -293,4 +336,4 @@ class PredictionEngine:
             usage_cost = sum(slot["kwh"] * price for slot, price in zip(profile, prices, strict=True))
             comparisons.append(TariffComparison(tariff, CostBreakdown(
                 usage_cost, standing, usage_cost + standing, total_kwh)))
-        return PredictionResult(target_date, source_dates, profile, comparisons)
+        return PredictionResult(target_date, source_dates, profile, comparisons, incomplete)

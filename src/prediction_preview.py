@@ -18,7 +18,7 @@ class PredictionPreview:
     def __init__(self):
         self._lock = Lock()
         self._state = "idle"
-        self._message = "Ready to predict tomorrow using the previous four matching weekdays."
+        self._message = "Ready to predict tomorrow using the four most recent complete matching weekdays."
         self._result = None
         self._target_date = None
         self._scheduled_target_date = None
@@ -88,6 +88,12 @@ class PredictionPreview:
                 if scheduled and self._scheduled_target_date == target_date:
                     self._scheduled_target_date, self._next_retry = None, None
                 self._message = "Prediction complete. View the results in Logs or your configured notification channel."
+                if payload["incomplete_source_days"]:
+                    self._message += (" Searched older matching weekdays because some source days were incomplete. "
+                                      "Source days: " + ", ".join(payload["source_dates"]) + ".")
+                if payload["uses_partial_history"] or payload["history_sample_min"] < 4:
+                    self._message += (f" Limited history: {payload['history_sample_min']}–{payload['history_sample_max']} "
+                                      "matching days per half hour; used available readings within three months.")
                 if not payload["is_full_day"]:
                     self._message += (f" Partial-day comparison: {payload['slot_count']} of {payload['day_slot_count']} "
                                       "half hours (00:00–23:00 Europe/London). The unpublished final hour is "

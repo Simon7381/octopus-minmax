@@ -13,7 +13,7 @@ import config_manager
 import ha_preview
 import web_server
 from prediction_engine import (HALF_HOUR, LONDON, PredictionEngine, PredictionError, RatesNotPublished,
-                               day_bounds, day_slots, prediction_tariffs)
+                               day_bounds, day_slots, history_cutoff, prediction_tariffs)
 from prediction_preview import PredictionPreview
 from query_service import QueryService
 
@@ -207,8 +207,101 @@ class PredictionEngineTests(unittest.TestCase):
     def test_incomplete_history_is_not_treated_as_zero_usage(self):
         api = FixtureAPI()
         api.gap = True
-        with self.assertRaisesRegex(PredictionError, "47 of 48"):
+        with self.assertRaisesRegex(PredictionError, "No matching historical half hour.*23:30.*three months"):
             PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+
+    def history_fixture(self, target, missing):
+        api = FixtureAPI(target)
+        original = api.execute_rest_query
+
+        def query(url, **kwargs):
+            response = original(url, **kwargs)
+            if "/consumption/" in url:
+                day = datetime.fromisoformat(parse_qs(urlsplit(url).query)["period_from"][0]).astimezone(LONDON).date()
+                response["results"] = [reading for index, reading in enumerate(response["results"])
+                                       if index not in missing(day)]
+            return response
+
+        api.execute_rest_query = query
+        return api
+
+    def test_missing_october_8_is_replaced_by_next_complete_thursday(self):
+        target = date(2026, 10, 29)
+        api = self.history_fixture(target, lambda day: (0, 1) if day == date(2026, 10, 8) else ())
+        result = PredictionEngine(api).predict("A-TEST", target, "agile,cosy")
+        self.assertEqual(result.source_dates, [date(2026, 10, 22), date(2026, 10, 15),
+                                              date(2026, 10, 1), date(2026, 9, 24)])
+        self.assertTrue(all(slot["kwh"] == 3 for slot in result.profile))
+        self.assertEqual(result.as_dict()["history_sample_min"], 4)
+        self.assertFalse(result.as_dict()["uses_partial_history"])
+        self.assertIn("2026-10-08 (46 of 48 slots)", result.summary())
+        self.assertEqual(sum("/consumption/" in url for url, _ in api.requests), 5)
+
+    def test_multiple_incomplete_and_empty_days_are_skipped(self):
+        missing_dates = {TARGET - timedelta(weeks=1), TARGET - timedelta(weeks=3)}
+        api = self.history_fixture(TARGET, lambda day: range(50) if day in missing_dates else ())
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(result.source_dates, [TARGET - timedelta(weeks=w) for w in (2, 4, 5, 6)])
+        self.assertTrue(all(slot["kwh"] == 4.25 for slot in result.profile))
+
+    def test_three_calendar_month_cutoff_clamps_month_ends_and_leap_years(self):
+        for target, expected in ((date(2026, 5, 31), date(2026, 2, 28)),
+                                 (date(2024, 5, 31), date(2024, 2, 29)),
+                                 (date(2026, 1, 31), date(2025, 10, 31))):
+            self.assertEqual(history_cutoff(target), expected)
+
+    def test_shorter_three_month_window_does_not_include_a_thirteenth_week(self):
+        target = date(2026, 4, 28)
+        api = self.history_fixture(target, lambda day: range(50))
+        with self.assertRaises(PredictionError):
+            PredictionEngine(api).predict("A-TEST", target, "agile,cosy")
+        self.assertEqual(sum("/consumption/" in url for url, _ in api.requests), 12)
+
+    def test_three_month_limit_uses_fewer_complete_days_when_others_are_empty(self):
+        complete = {TARGET - timedelta(weeks=w) for w in (2, 5)}
+        api = self.history_fixture(TARGET, lambda day: () if day in complete else range(50))
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(result.source_dates, sorted(complete, reverse=True))
+        self.assertTrue(all(slot["kwh"] == 3.5 for slot in result.profile))
+        self.assertEqual(result.as_dict()["history_sample_min"], 2)
+        self.assertIn("Limited history: 2–2", result.summary())
+        queried = [datetime.fromisoformat(parse_qs(urlsplit(url).query)["period_from"][0]).astimezone(LONDON).date()
+                   for url, _ in api.requests if "/consumption/" in url]
+        self.assertEqual(len(queried), 13)
+        self.assertTrue(all(day >= history_cutoff(TARGET) for day in queried))
+
+    def test_partial_days_supply_available_slots_after_three_month_search(self):
+        # No day is complete, but alternating gaps leave every slot represented.
+        api = self.history_fixture(TARGET, lambda day: (0,) if (TARGET - day).days // 7 % 2 else (1,))
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(result.profile[0]["kwh"], 5)  # weeks 2, 4, 6, 8
+        self.assertEqual(result.profile[1]["kwh"], 4)  # weeks 1, 3, 5, 7
+        self.assertEqual(result.profile[2]["kwh"], 2.5)
+        self.assertTrue(result.as_dict()["uses_partial_history"])
+        self.assertIn("Limited history", result.summary())
+
+    def test_complete_days_are_preferred_and_partial_days_top_up_missing_samples(self):
+        complete = TARGET - timedelta(weeks=2)
+        api = self.history_fixture(TARGET, lambda day: () if day == complete else (0,))
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(result.profile[0]["kwh"], 2)
+        self.assertEqual(result.profile[0]["history_samples"], 1)
+        self.assertEqual(result.profile[1]["kwh"], 2.5)
+        self.assertEqual(result.as_dict()["history_sample_max"], 4)
+        self.assertIn("Limited history: 1–4", result.summary())
+
+    def test_missing_history_outside_priced_period_does_not_block_prediction(self):
+        api = self.history_fixture(TARGET, lambda day: (47,))
+        api.unpublished_final_hour = True
+        result = PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(len(result.profile), 46)
+        self.assertTrue(all(slot["kwh"] == 2.5 for slot in result.profile))
+
+    def test_no_history_at_all_reports_failure_without_going_outside_three_months(self):
+        api = self.history_fixture(TARGET, lambda day: range(50))
+        with self.assertRaisesRegex(PredictionError, "No matching historical half hour.*three months"):
+            PredictionEngine(api).predict("A-TEST", TARGET, "agile,cosy")
+        self.assertEqual(sum("/consumption/" in url for url, _ in api.requests), 13)
 
     def test_invalid_consumption_is_rejected(self):
         for value in (-1, float("nan"), float("inf"), "bad"):
@@ -445,6 +538,24 @@ class PredictionWorkerTests(unittest.TestCase):
             self.assertIn(b"unpublished final hour", client.get("/", headers=headers).data)
             ns.return_value.send_notification.assert_called_once()
             self.assertIn("Partial-day estimate: 46 of 48", ns.return_value.send_notification.call_args.args[0])
+
+    def test_limited_history_is_visible_in_dashboard_and_notification(self):
+        fixture = PredictionEngineTests().history_fixture(
+            TARGET, lambda day: () if day == TARGET - timedelta(weeks=2) else range(50))
+        result = PredictionEngine(fixture).predict("A-TEST", TARGET, "agile,cosy")
+        with patch("prediction_preview.QueryService"), patch("prediction_preview.PredictionEngine") as engine, \
+                patch("prediction_preview.NotificationService") as ns, \
+                patch.object(web_server, "prediction_preview", self.worker):
+            engine.return_value.predict.return_value = result
+            self.worker._run(TARGET, ("key", "url", "account", "agile,cosy"))
+            client = web_server.app.test_client()
+            headers = {"X-Ingress-Path": "/api/hassio_ingress/test"}
+            status = client.get("/prediction-status", headers=headers).json
+            self.assertEqual(status["state"], "complete")
+            self.assertEqual(status["result"]["history_sample_min"], 1)
+            self.assertIn("Limited history: 1–1", status["message"])
+            self.assertIn(b"Limited history", client.get("/", headers=headers).data)
+            self.assertIn("Limited history: 1–1", ns.return_value.send_notification.call_args.args[0])
 
     def test_failures_are_visible_and_raw_api_errors_are_not_exposed(self):
         for error, expected in ((RuntimeError("private-api-key"), "See Logs"),

@@ -1,3 +1,16 @@
+## v2.0.13 - v2.0.13
+## What's Changed
+
+* Skip incomplete consumption days and search older matching weekdays for four complete source days, up to three calendar months.
+* At that limit, use available complete and partial-day readings per half hour, clearly reporting reduced history. Never substitute zero for missing consumption.
+* Show actual source dates, incomplete days and historical sample coverage in prediction results and dashboard status.
+
+## Validation
+* All 163 offline tests passed in the local Python 3.15 Podman image, including browser fixtures and 41 prediction tests.
+* A read-only live prediction for 29 October 2026 completed using 22 October, 15 October, 1 October and 24 September. The incomplete 8 October was replaced; all compared half hours had four historical samples.
+
+**Full Changelog**: https://github.com/Simon7381/octopus-minmax/compare/v2.0.12...v2.0.13
+
 ## v2.0.12 - v2.0.12
 ## What's Changed
 

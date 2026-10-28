@@ -23,7 +23,7 @@ configuration:
     description: When not One Off. This is the time to execute comparison.
   PREDICTION_TIME:
     name: Prediction Time
-    description: Time in Europe/London to predict tomorrow's costs, using four matching weekdays. Default 21:00. Missing Agile rates retry every 30 minutes. Daily scheduling is paused in One-Off and Playwright test modes.
+    description: Time in Europe/London to predict tomorrow's costs, using four complete matching weekdays from up to three months of history, or available readings when fewer complete days exist. Default 21:00. Missing Agile rates retry every 30 minutes. Daily scheduling is paused in One-Off and Playwright test modes.
   PREDICTION_TARIFFS:
     name: Prediction Tariffs
     description: Comma-separated tariffs to predict. Must include agile. Default agile,cosy. Predictions never switch tariffs.
